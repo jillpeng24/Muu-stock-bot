@@ -1,40 +1,76 @@
+
+"""
+完整的股票搜尋系統自動化執行腳本
+依序執行：資料更新 → 籌碼掃描 → 基本面檢核 → 技術面分析
+"""
 import os
-import pandas as pd
-import yfinance as yf
-import numpy as np
-import glob
+import sys
 from pathlib import Path
 
 BASE_DIR = Path(__file__).parent.resolve()
 DATA_DIR = BASE_DIR / "data"
+DATA_DIR.mkdir(parents=True, exist_ok=True)
+
+def run_step(script_name, description):
+    """執行單一步驟並處理錯誤"""
+    print(f"\n{'='*60}")
+    print(f"📍 {description}")
+    print(f"{'='*60}")
+    try:
+        # 動態導入並執行
+        module_name = script_name.replace('.py', '')
+        module = __import__(module_name)
+        if hasattr(module, 'main'):
+            module.main()
+        else:
+            print(f"⚠️ {script_name} 沒有 main() 函數，跳過")
+        return True
+    except Exception as e:
+        print(f"❌ {description} 執行失敗: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return False
 
 def main():
-    files = glob.glob(str(DATA_DIR / "comprehensive_check_*.csv"))
-    if not files: return
-    df = pd.read_csv(sorted(files)[-1], dtype={'代號': str})
-    df_passed = df[df['狀態'] == '✅ 通過'].copy()
+    print("🤖 股票搜尋系統 - 完整自動化執行")
+    print(f"📂 工作目錄: {BASE_DIR}")
+    print(f"📁 資料目錄: {DATA_DIR}")
     
-    final_list = []
-    for _, row in df_passed.iterrows():
-        sid = row['代號']
-        try:
-            # 支援台股兩市場
-            stock = yf.Ticker(f"{sid}.TW")
-            h = stock.history(period="3mo")
-            if h.empty: h = yf.Ticker(f"{sid}.TWO").history(period="3mo")
-            
-            if not h.empty:
-                score = 0
-                if h['Close'].iloc[-1] > h['Close'].rolling(20).mean().iloc[-1]: score += 1
-                row['技術面得分'] = f"{score}/7"
-                row['技術面檢核'] = "✓ 站上月線" if score > 0 else "未達標"
-                final_list.append(row.to_dict())
-        except: continue
-        
-    if final_list:
-        res_df = pd.DataFrame(final_list)
-        res_df.to_csv(DATA_DIR / f"final_selection_{pd.Timestamp.now().strftime('%Y%m%d')}.csv", index=False)
-        print("✅ 技術分析完成")
+    # 檢查必要的環境變數
+    token = os.environ.get("FINMIND_TOKEN", "")
+    if not token:
+        print("⚠️ 警告: FINMIND_TOKEN 未設定，基本面檢核可能受限")
+    
+    # 執行流程
+    steps = [
+        ("update_data.py", "步驟 1: 更新每日籌碼資料"),
+        ("chip_scanner.py", "步驟 2: 籌碼面掃描"),
+        ("stock_checker.py", "步驟 3: 基本面檢核"),
+        ("technical_analyzer.py", "步驟 4: 技術面分析")
+    ]
+    
+    success_count = 0
+    for script, desc in steps:
+        if run_step(script, desc):
+            success_count += 1
+    
+    print(f"\n{'='*60}")
+    print(f"✅ 執行完成: {success_count}/{len(steps)} 個步驟成功")
+    print(f"{'='*60}")
+    
+    # 列出生成的檔案
+    if DATA_DIR.exists():
+        files = sorted(DATA_DIR.glob("*.csv"))
+        if files:
+            print("\n📊 生成的檔案:")
+            for f in files:
+                size = f.stat().st_size
+                print(f"  - {f.name} ({size:,} bytes)")
+        else:
+            print("\n⚠️ data/ 目錄中沒有生成 CSV 檔案")
+    
+    return success_count == len(steps)
 
 if __name__ == "__main__":
-    main()
+    success = main()
+    sys.exit(0 if success else 1)
