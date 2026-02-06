@@ -29,7 +29,8 @@ jobs:
           FINMIND_TOKEN: ${{ secrets.FINMIND_TOKEN }}
           LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
           LINE_USER_ID: ${{ secrets.LINE_USER_ID }}
-        run: python autorun.py
+        run: |
+          python3 autorun.py || { echo "❌ 執行失敗"; exit 1; }
 
       - name: 累積資料並存回 GitHub
         run: |
