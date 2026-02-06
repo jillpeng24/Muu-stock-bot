@@ -2,46 +2,79 @@ name: Stock Bot Daily Run
 
 on:
   schedule:
+    # 每週一到五早上 8:30 (UTC) 執行 = 台北時間 16:30
     - cron: '30 8 * * 1-5'
-  workflow_dispatch: 
+  workflow_dispatch:  # 允許手動觸發
 
 jobs:
   run-bot:
     runs-on: ubuntu-latest
-    # 關鍵修正：顯式給予寫入權限
+    
+    # 給予寫入權限
     permissions:
       contents: write
       
     steps:
       - name: 檢出程式碼
         uses: actions/checkout@v3
-
+        with:
+          fetch-depth: 0  # 取得完整歷史記錄
+      
       - name: 設定 Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.9'
-
+          cache: 'pip'  # 快取 pip 套件
+      
       - name: 安裝套件
-        run: pip install -r requirements.txt
-
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+      
       - name: 執行搜股排程
         env:
           FINMIND_TOKEN: ${{ secrets.FINMIND_TOKEN }}
           LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
           LINE_USER_ID: ${{ secrets.LINE_USER_ID }}
         run: |
-          echo "📂 目前目錄檔案清單："
-          ls -R
-          echo "🚀 開始執行 autorun.py..."
+          echo "📂 目前目錄結構："
+          ls -la
+          
+          echo ""
+          echo "🚀 開始執行完整搜股流程..."
           python3 -u autorun.py
-
+          
+          echo ""
+          echo "📊 執行結果："
+          if [ -d "data" ]; then
+            ls -lh data/
+          else
+            echo "⚠️ data 目錄不存在"
+          fi
+      
       - name: 累積資料並存回 GitHub
         run: |
-          git config --local user.email "action@github.com"
-          git config --local user.name "GitHub Action"
-          # 檢查是否有 data 資料夾與檔案，避免 git add 失敗
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "GitHub Actions Bot"
+          
+          # 確保 data 目錄存在
           mkdir -p data
-          git add data/*.csv || echo "No changes to add"
-          git commit -m "Update stock data [skip ci]" || echo "No changes to commit"
-          # 強制推播至 main 分支
-          git push origin main
+          
+          # 檢查是否有變更
+          if [ -n "$(git status --porcelain data/)" ]; then
+            echo "📝 發現資料變更，準備提交..."
+            git add data/*.csv
+            git commit -m "🤖 自動更新股票資料 - $(date +'%Y-%m-%d %H:%M:%S')"
+            git push origin main
+            echo "✅ 資料已推送至 GitHub"
+          else
+            echo "ℹ️ 沒有新資料需要提交"
+          fi
+      
+      - name: 上傳結果檔案（供下載）
+        uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: stock-analysis-results
+          path: data/*.csv
+          retention-days: 30
