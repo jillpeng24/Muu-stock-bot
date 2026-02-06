@@ -2,14 +2,13 @@ name: Stock Bot Daily Run
 
 on:
   schedule:
-    # 台灣時間週一至週五 下午 16:30 執行 (UTC 08:30)
     - cron: '30 8 * * 1-5'
-  workflow_dispatch: # 允許你手動點擊執行測試
+  workflow_dispatch: 
 
 jobs:
   run-bot:
     runs-on: ubuntu-latest
-    # 給予寫入權限，才能把資料累積回 GitHub
+    # 關鍵修正：顯式給予寫入權限
     permissions:
       contents: write
       
@@ -27,7 +26,6 @@ jobs:
 
       - name: 執行搜股排程
         env:
-          # 這裡對應我們稍後要在 GitHub 設定的 Secrets
           FINMIND_TOKEN: ${{ secrets.FINMIND_TOKEN }}
           LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
           LINE_USER_ID: ${{ secrets.LINE_USER_ID }}
@@ -37,6 +35,9 @@ jobs:
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
-          git add data/*.csv
-          git commit -m "Update stock data [skip ci]" || exit 0
-          git push
+          # 檢查是否有 data 資料夾與檔案，避免 git add 失敗
+          mkdir -p data
+          git add data/*.csv || echo "No changes to add"
+          git commit -m "Update stock data [skip ci]" || echo "No changes to commit"
+          # 強制推播至 main 分支
+          git push origin main
