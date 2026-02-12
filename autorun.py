@@ -1,76 +1,116 @@
-
-"""
-完整的股票搜尋系統自動化執行腳本
-依序執行：資料更新 → 籌碼掃描 → 基本面檢核 → 技術面分析
-"""
 import os
-import sys
+import subprocess
+import pandas as pd
+import requests
 from pathlib import Path
+from datetime import datetime
 
+# ==========================================
+# 設定與路徑 (完全對齊 GitHub 工作目錄)
+# ==========================================
 BASE_DIR = Path(__file__).parent.resolve()
 DATA_DIR = BASE_DIR / "data"
-DATA_DIR.mkdir(parents=True, exist_ok=True)
+LINE_API_URL = "https://api.line.me/v2/bot/message/push"
 
-def run_step(script_name, description):
-    """執行單一步驟並處理錯誤"""
-    print(f"\n{'='*60}")
-    print(f"📍 {description}")
-    print(f"{'='*60}")
+def load_config():
+    """從 GitHub Secrets (環境變數) 讀取設定"""
+    token = os.environ.get("LINE_CHANNEL_ACCESS_TOKEN")
+    user_id = os.environ.get("LINE_USER_ID")
+    return token, user_id
+
+def run_step(script_name):
+    """執行子腳本並確認是否成功"""
+    print(f"\n🚀 正在執行: {script_name}")
     try:
-        # 動態導入並執行
-        module_name = script_name.replace('.py', '')
-        module = __import__(module_name)
-        if hasattr(module, 'main'):
-            module.main()
-        else:
-            print(f"⚠️ {script_name} 沒有 main() 函數，跳過")
+        # GitHub Actions 環境中使用 python 即可
+        subprocess.run(["python", script_name], check=True)
         return True
-    except Exception as e:
-        print(f"❌ {description} 執行失敗: {str(e)}")
-        import traceback
-        traceback.print_exc()
+    except subprocess.CalledProcessError:
+        print(f"❌ {script_name} 執行失敗，中斷後續流程。")
         return False
 
+def send_line_request(token, user_id, text):
+    """傳送 LINE 訊息請求"""
+    payload = {
+        "to": user_id,
+        "messages": [{"type": "text", "text": text}]
+    }
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {token}"
+    }
+    try:
+        r = requests.post(LINE_API_URL, headers=headers, json=payload, timeout=20)
+        r.raise_for_status()
+    except Exception as e:
+        print(f"⚠️ LINE 發送錯誤: {e}")
+
+def push_optimized_results(final_csv):
+    """將所有股票結果整合進長訊息發送"""
+    token, user_id = load_config()
+
+    if not token or not user_id:
+        print("❌ 找不到 GitHub Secrets 中的 LINE 設定，取消推播。")
+        return
+
+    # 讀取 CSV
+    df = pd.read_csv(final_csv)
+    # 保持原有的排序邏輯
+    if "技術面得分" in df.columns:
+        df = df.sort_values(by="技術面得分", ascending=False)
+    
+    today = datetime.now().strftime("%Y-%m-%d")
+    header = f"🏆 籌碼+技術面最終選股報表\n📅 日期：{today}\n📊 總計：{len(df)} 檔\n"
+    header += "══════════════\n"
+    
+    all_msg = header
+    for _, row in df.iterrows():
+        stock_info = (
+            f"【{row['代號']} {row['名稱']}】({row.get('技術面得分', '-')})\n"
+            f"● 分類：{row.get('分類', '-')}\n"
+            f"● 技術面：{row.get('技術面檢核', '-')}\n"
+            f"● 基本面：{row.get('檢核結果', '-')}\n"
+            f"● 警示：{row.get('警示', '-')}\n"
+            f"────────────────\n"
+        )
+        
+        if len(all_msg) + len(stock_info) > 4500:
+            send_line_request(token, user_id, all_msg)
+            all_msg = "續前則報表：\n"
+            
+        all_msg += stock_info
+
+    send_line_request(token, user_id, all_msg)
+    print(f"✅ 已完成 {len(df)} 檔股票的合併推播。")
+
 def main():
-    print("🤖 股票搜尋系統 - 完整自動化執行")
-    print(f"📂 工作目錄: {BASE_DIR}")
-    print(f"📁 資料目錄: {DATA_DIR}")
+    print(f"=== ⚙️ GitHub 自動化排程啟動 ({datetime.now().strftime('%Y-%m-%d %H:%M')}) ===")
     
-    # 檢查必要的環境變數
-    token = os.environ.get("FINMIND_TOKEN", "")
-    if not token:
-        print("⚠️ 警告: FINMIND_TOKEN 未設定，基本面檢核可能受限")
+    # 確保 data 資料夾存在
+    os.makedirs(DATA_DIR, exist_ok=True)
     
-    # 執行流程
-    steps = [
-        ("update_data.py", "步驟 1: 更新每日籌碼資料"),
-        ("chip_scanner.py", "步驟 2: 籌碼面掃描"),
-        ("stock_checker.py", "步驟 3: 基本面檢核"),
-        ("technical_analyzer.py", "步驟 4: 技術面分析")
+    # 依序執行四個核心腳本 (路徑對齊 GitHub 根目錄)
+    scripts = [
+        "update_data.py",
+        "chip_scanner.py",
+        "stock_checker.py",
+        "technical_analyzer.py"
     ]
-    
-    success_count = 0
-    for script, desc in steps:
-        if run_step(script, desc):
-            success_count += 1
-    
-    print(f"\n{'='*60}")
-    print(f"✅ 執行完成: {success_count}/{len(steps)} 個步驟成功")
-    print(f"{'='*60}")
-    
-    # 列出生成的檔案
-    if DATA_DIR.exists():
-        files = sorted(DATA_DIR.glob("*.csv"))
-        if files:
-            print("\n📊 生成的檔案:")
-            for f in files:
-                size = f.stat().st_size
-                print(f"  - {f.name} ({size:,} bytes)")
-        else:
-            print("\n⚠️ data/ 目錄中沒有生成 CSV 檔案")
-    
-    return success_count == len(steps)
+
+    for script in scripts:
+        script_path = BASE_DIR / script
+        if not run_step(str(script_path)):
+            return
+
+    # 搜尋最新產出的結果檔
+    final_files = list(DATA_DIR.glob("final_selection_*.csv"))
+    if final_files:
+        latest_file = sorted(final_files)[-1]
+        push_optimized_results(latest_file)
+    else:
+        print("⚠️ 找不到最終選股檔案。")
+
+    print("\n✨ GitHub Actions 任務已完成！")
 
 if __name__ == "__main__":
-    success = main()
-    sys.exit(0 if success else 1)
+    main()
