@@ -17,6 +17,11 @@ DATA_DIR = os.path.join(BASE_DIR, "data")
 FINMIND_API_URL = "https://api.finmindtrade.com/api/v4/data"
 
 def get_token():
+    # 優先讀取環境變數 (GitHub Actions Secrets)
+    env_token = os.environ.get("FINMIND_TOKEN")
+    if env_token:
+        return env_token
+    # 本機執行時從 config/.env 讀取
     if os.path.exists(CONFIG_PATH):
         with open(CONFIG_PATH, "r", encoding="utf-8") as f:
             for line in f:
