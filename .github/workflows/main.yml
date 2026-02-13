@@ -3,7 +3,7 @@ name: Stock Auto Runner
 on:
   schedule:
     # 台北時間 16:30 執行 (UTC 08:30)
-    - cron: '30 8 * * *'
+    - cron: '30 8 * * 1-5'
   workflow_dispatch: # 允許手動點擊執行
 
 jobs:
