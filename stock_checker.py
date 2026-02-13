@@ -1,4 +1,3 @@
-
 # stock_checkerN.py
 import os
 import requests
@@ -35,7 +34,8 @@ TOKEN = get_token()
 # API 工具函式
 # ==========================================
 def fetch_fm(dataset, stock_id=None, start_date=None, end_date=None):
-    if not TOKEN: 
+    if not TOKEN:
+        print(f"      ❌ TOKEN 為空，無法呼叫 API")
         return pd.DataFrame()
     params = {"dataset": dataset, "token": TOKEN}
     if stock_id: params["data_id"] = stock_id
@@ -46,6 +46,8 @@ def fetch_fm(dataset, stock_id=None, start_date=None, end_date=None):
         res = resp.json()
         if res.get("status") == 200 and res.get("msg") == "success":
             return pd.DataFrame(res.get("data", []))
+        else:
+            print(f"      ⚠️ API 回傳失敗: status={res.get('status')}, msg={res.get('msg')}")
     except Exception as e:
         print(f"      ⚠️ API 錯誤: {e}")
     return pd.DataFrame()
