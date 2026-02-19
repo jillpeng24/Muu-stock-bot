@@ -112,9 +112,9 @@ def update_chips():
                     inst_data.append({
                         'stock_id': sid,
                         'name': r[1].strip(),
-                        'foreign': foreign_shares / 1000,   # 轉換為張數
-                        'trust': trust_shares / 1000,       # 轉換為張數
-                        'dealer': dealer_shares / 1000      # 轉換為張數
+                        'foreign': foreign_shares,   # 轉換為張數
+                        'trust': trust_shares,       # 轉換為張數
+                        'dealer': dealer_shares      # 轉換為張數
                     })
             
             df_day = pd.DataFrame(inst_data)
