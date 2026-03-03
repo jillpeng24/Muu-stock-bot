@@ -29,7 +29,7 @@ jobs:
     - name: 4. 執行基本面歷史資料抓取 (斷點續傳)
       env:
         FINMIND_TOKEN: ${{ secrets.FINMIND_TOKEN }} # 從 GitHub Secrets 讀取金鑰餵給程式
-      run: python update_history_auto.py
+      run: python update_history_cloudpro.py
 
     - name: 5. 存檔並推回雲端資料夾 (Commit and Push)
       run: |
