@@ -3,7 +3,7 @@ name: 自動補齊歷史基本面資料庫
 on:
   workflow_dispatch:
   schedule:
-    - cron: '13 * * * *'
+    - cron: '45 * * * *'
 
 jobs:
   update-db:
