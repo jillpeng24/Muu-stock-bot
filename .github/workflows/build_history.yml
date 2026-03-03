@@ -1,0 +1,13 @@
+- name: Commit and Push changes (雲端自動存檔)
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        
+        # 🤖 把剛剛 Python 存在雲端虛擬電腦 data/history/ 裡的 CSV 檔案全部抓起來
+        git add data/history/*.csv || true
+        
+        # 🤖 寫上存檔紀錄
+        git commit -m "🤖 自動更新歷史基本面資料庫" || echo "No changes to commit"
+        
+        # 🤖 正式推回你的 GitHub 倉庫！(這步做完，檔案就永久存進你的雲端了)
+        git push
