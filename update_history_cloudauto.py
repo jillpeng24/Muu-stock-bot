@@ -55,16 +55,12 @@ def fetch_fm(dataset, stock_id=None, start_date=None):
             resp = requests.get(FINMIND_API_URL, params=params, timeout=30)
             res = resp.json()
 
-            # 達到 API 限額 → 等待 3600 秒（1小時）後重試
+            # 達到 API 限額 → 直接中斷程式，讓外層的 finally 存檔並上傳
             if "upper limit" in str(res.get("msg", "")):
-                now = datetime.now()
-                from datetime import timedelta
-                resume_time = (now + timedelta(seconds=3600)).strftime("%H:%M:%S")
-                print(f"\n⏳ [{now.strftime('%H:%M:%S')}] 達到 API 每小時限額！")
-                print(f"   等待 3600 秒（1小時），預計 {resume_time} 自動恢復...")
-                time.sleep(3600)
-                print(f"   ✅ 額度已重置，繼續抓取！")
-                continue  # 重試同一支股票
+                print(f"\n⏳ 達到 API 每小時限額！不再等待！")
+                print("   自動觸發存檔機制，並交由 GitHub 推送上雲端！")
+                import sys
+                sys.exit(0) # 👈 關鍵：以「成功狀態(0)」結束程式，觸發資料存檔，並讓 GitHub 繼續執行 Push！
 
             data = res.get("data", [])
             return pd.DataFrame(data) if data else pd.DataFrame()
