@@ -4,7 +4,7 @@ on:
   workflow_dispatch: # 允許你在 GitHub 網頁上手動按鈕觸發 (測試時超好用)
   schedule:
     # 每個月 12 日的 UTC 0點到9點 (台灣時間 08:00 到 17:00)，每小時的第 0 分鐘執行一次 (共 10 次)
-    - cron: '0 0-9 12 * *'
+    - cron: '0 * * * *'
 
 jobs:
   update-db:
