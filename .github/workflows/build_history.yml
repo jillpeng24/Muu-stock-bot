@@ -1,13 +1,46 @@
-- name: Commit and Push changes (雲端自動存檔)
+name: 自動補齊歷史基本面資料庫
+
+on:
+  workflow_dispatch: # 允許你在 GitHub 網頁上手動按鈕觸發 (測試時超好用)
+  schedule:
+    # 每個月 12 日的 UTC 0點到9點 (台灣時間 08:00 到 17:00)，每小時的第 0 分鐘執行一次 (共 10 次)
+    - cron: '0 0-9 12 * *'
+
+jobs:
+  update-db:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # 允許 GitHub 機器人把抓好的 CSV 存回你的倉庫
+
+    steps:
+    - name: 1. 取得最新程式碼 (Checkout repository)
+      uses: actions/checkout@v4
+
+    - name: 2. 設定 Python 環境
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11' # 使用穩定的 Python 版本
+
+    - name: 3. 安裝必備套件
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    - name: 4. 執行基本面歷史資料抓取 (斷點續傳)
+      env:
+        FINMIND_TOKEN: ${{ secrets.FINMIND_TOKEN }} # 從 GitHub Secrets 讀取金鑰餵給程式
+      run: python update_history_auto.py
+
+    - name: 5. 存檔並推回雲端資料夾 (Commit and Push)
       run: |
         git config --local user.email "action@github.com"
-        git config --local user.name "GitHub Action"
+        git config --local user.name "GitHub Action Bot"
         
-        # 🤖 把剛剛 Python 存在雲端虛擬電腦 data/history/ 裡的 CSV 檔案全部抓起來
+        # 追蹤 data/history 裡面所有變動的 CSV 檔案
         git add data/history/*.csv || true
         
-        # 🤖 寫上存檔紀錄
-        git commit -m "🤖 自動更新歷史基本面資料庫" || echo "No changes to commit"
+        # 檢查是否有新資料，有變動才 Commit，避免報錯
+        git diff --quiet && git diff --staged --quiet || git commit -m "🤖 自動更新歷史基本面資料庫 (每月12日排程)"
         
-        # 🤖 正式推回你的 GitHub 倉庫！(這步做完，檔案就永久存進你的雲端了)
+        # 正式把檔案推回你的 GitHub 雲端倉庫
         git push
