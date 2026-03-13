@@ -59,7 +59,8 @@ def analyze_technical(df):
     # 4. 布林通道 (20, 2)
     std20 = close.rolling(window=20).std()
     upper_bb = ma20 + (std20 * 2)
-    bandwidth = (upper_bb - (ma20 - std20 * 2)) / ma20
+    lower_bb = ma20 - (std20 * 2)
+    bandwidth = (upper_bb - lower_bb) / (ma20 + 0.001) * 100  # BBW% 與 app.py 統一
 
     # --- 開始打勾檢核 (取最後一天數據) ---
     curr_c = close.iloc[-1]
@@ -181,6 +182,13 @@ def start_technical_analysis():
     out_path = os.path.join(DATA_DIR, f"final_selection_{datetime.now().strftime('%Y%m%d')}.csv")
     df_final_output.to_csv(out_path, index=False, encoding='utf-8-sig')
     print(f"\n💾 最終選股名單已儲存: {os.path.basename(out_path)}")
+
+    # ==========================================
+    # 👇 請在這裡補上這兩行 (for 技術分析網頁）
+    # ==========================================
+    latest_path = os.path.join(DATA_DIR, "latest_selection.csv")
+    df_final_output.to_csv(latest_path, index=False, encoding='utf-8-sig')
+    print(f"🔄 同步更新網頁端專用檔案: latest_selection.csv")
 
 if __name__ == "__main__":
     start_technical_analysis()
