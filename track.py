@@ -18,7 +18,7 @@ except ImportError:
 # ==========================================
 # 1. 頁面基本設定
 # ==========================================
-st.set_page_config(page_title="Trade - Track", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="ZenTrade x TOTHEMOON", layout="wide", initial_sidebar_state="expanded")
 
 st.markdown("""
     <style>
@@ -303,7 +303,7 @@ def load_selection_csv():
 df_list = load_selection_csv()
 
 with st.sidebar:
-    st.title("Trade - Track")
+    st.title("🌿 ZenTrade")
 
     # ── 雙模式資料來源 ──
     source_mode = st.radio("資料來源", ["📋 選股清單", "✏️ 手動輸入"], horizontal=True)
@@ -332,6 +332,25 @@ with st.sidebar:
 
 if selected_stock:
     code = selected_stock.split(" ")[0].strip()
+
+    # ── 取得股票名稱（手動輸入時從yfinance抓，選股清單時從selected_stock取）──
+    if " " in selected_stock:
+        stock_display = selected_stock  # 選股清單：已有「代號 名稱」
+    else:
+        # 手動輸入：嘗試從yfinance取名稱
+        @st.cache_data(ttl=86400)
+        def get_stock_name(c):
+            try:
+                info = yf.Ticker(f"{c}.TW").info
+                name = info.get('longName') or info.get('shortName', '')
+                if not name:
+                    info = yf.Ticker(f"{c}.TWO").info
+                    name = info.get('longName') or info.get('shortName', c)
+                return name
+            except:
+                return c
+        stock_name = get_stock_name(code)
+        stock_display = f"{code} {stock_name}"
 
     # ── Bug Fix：用 session_state 儲存日K資料，避免 tab 切換失去變數 ──
     if f"df_d_{code}" not in st.session_state:
@@ -372,7 +391,7 @@ if selected_stock:
         df_d = pd.DataFrame()
         day_score, day_checks = 0, []
 
-    st.subheader(f"📊 {selected_stock} 戰情室")
+    st.subheader(f"📊 {stock_display} 戰情室")
     tab1, tab2 = st.tabs(["📅 日K 趨勢", "⚡ 1分K 狙擊"])
 
     # ── Tab1：日K趨勢 + 進出場參考卡片 ──
@@ -395,7 +414,7 @@ if selected_stock:
 
         with col1:
             with st.container(border=True):
-                st.subheader(f"📝 技術檢核 ({day_score}/7)")
+                st.subheader(f"📝 7 項技術檢核 ({day_score}/7)")
                 if day_checks:
                     for item in day_checks:
                         st.write(item)
