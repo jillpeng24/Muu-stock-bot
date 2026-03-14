@@ -223,11 +223,10 @@ def render_kline_chart(df, is_day_chart=True):
 
     fig.update_layout(
         height=850,
-        margin=dict(l=10, r=50, t=30, b=20),
+        margin=dict(l=5, r=5, t=30, b=20),
         template="plotly_white",
         xaxis_rangeslider_visible=False,
-        showlegend=True,
-        legend=dict(orientation="h", yanchor="bottom", y=1.01, xanchor="left", x=0),
+        showlegend=False,
         hovermode="x"
     )
 
