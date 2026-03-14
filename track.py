@@ -371,6 +371,16 @@ if selected_stock:
     # ── Tab1：日K趨勢 + 進出場參考卡片 ──
     with tab1:
         if not df_d.empty:
+            # ── 圖表上方現價顯示 ──
+            _last_c  = float(df_d['Close'].squeeze().iloc[-1])
+            _prev_c  = float(df_d['Close'].squeeze().iloc[-2])
+            _chg     = _last_c - _prev_c
+            _chg_pct = _chg / _prev_c * 100
+            st.metric(
+                label=stock_display,
+                value=f"{_last_c:.2f}",
+                delta=f"{_chg:+.2f} ({_chg_pct:+.2f}%)"
+            )
             render_kline_chart(df_d, is_day_chart=True)
         else:
             st.warning(f"無法取得 {code} 的日K資料。")
@@ -436,13 +446,6 @@ if selected_stock:
                         colors = {"green": "#7BAE7F", "yellow": "#C9A84C", "red": "#B56576"}
                         c = colors.get(level, "#999")
                         return f"<span style='color:{c}; font-size:1.1rem;'>●</span>"
-
-                    # ── 現價顯示 ──
-                    price_change = curr_c - float(df_d['Close'].squeeze().iloc[-2])
-                    price_pct    = price_change / float(df_d['Close'].squeeze().iloc[-2]) * 100
-                    price_color  = "#B56576" if price_change >= 0 else "#7BAE7F"
-                    st.markdown(f"<div style='font-size:1.4rem; font-weight:600; color:{price_color};'>{curr_c:.2f} <span style='font-size:1rem;'>({price_pct:+.2f}%)</span></div>", unsafe_allow_html=True)
-                    st.divider()
 
                     adx_dot  = dot("green") if adx_val > 40 else (dot("yellow") if adx_val > 25 else dot("red"))
                     adx_desc = "趨勢強，適合波段" if adx_val > 40 else ("趨勢成形中" if adx_val > 25 else "盤整，暫不適合波段")
