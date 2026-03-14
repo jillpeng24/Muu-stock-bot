@@ -455,13 +455,16 @@ if selected_stock:
                     bias_dot = dot("red") if abs(bias_20) > 10 else (dot("yellow") if abs(bias_20) > 6 else dot("green"))
                     bias_desc = "乖離過大，注意回落" if abs(bias_20) > 10 else ("略偏高，稍微注意" if abs(bias_20) > 6 else "合理範圍")
 
-                    rows = [
-                        f"{adx_dot} <b>趨勢強度</b>：ADX {adx_val:.1f} → {adx_desc}",
-                        f"{rsi_dot} <b>動能位置</b>：RSI {rsi_val:.1f} → {rsi_desc}",
-                        f"{bbw_dot} <b>波動狀態</b>：BBW {bbw_val:.2f}% → {bbw_desc}",
-                        f"{bias_dot} <b>乖離狀況</b>：20MA {bias_20:.2f}% → {bias_desc}",
-                    ]
-                    st.markdown("<div style='line-height:1.7; font-size:0.95rem;'>" + "<br>".join(rows) + "</div>", unsafe_allow_html=True)
+                    def row_item(dot_html, text):
+                        return f"<div style='display:flex; align-items:baseline; line-height:1.7; margin-bottom:2px;'><span style='flex-shrink:0; margin-right:6px;'>{dot_html}</span><span style='font-size:0.95rem;'>{text}</span></div>"
+
+                    st.markdown(
+                        row_item(adx_dot,  f"<b>趨勢強度</b>：ADX {adx_val:.1f} → {adx_desc}") +
+                        row_item(rsi_dot,  f"<b>動能位置</b>：RSI {rsi_val:.1f} → {rsi_desc}") +
+                        row_item(bbw_dot,  f"<b>波動狀態</b>：BBW {bbw_val:.2f}% → {bbw_desc}") +
+                        row_item(bias_dot, f"<b>乖離狀況</b>：20MA {bias_20:.2f}% → {bias_desc}"),
+                        unsafe_allow_html=True
+                    )
 
                     st.markdown("<div style='margin:8px 0; border-top:1px solid #eee;'></div>", unsafe_allow_html=True)
 
