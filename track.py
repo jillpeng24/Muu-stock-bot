@@ -469,20 +469,22 @@ if selected_stock:
                     st.markdown("<div style='margin:8px 0; border-top:1px solid #eee;'></div>", unsafe_allow_html=True)
 
                     # ── 進出場數值 ──
-                    entry_rows = [
-                        f"🛒 <b>建議進場區</b>：{entry_low_v} ~ {entry_high_v}",
-                        f"🛑 <b>停損設在</b>：{hard_stop:.2f}　（距現價 -{stop_pct}%）",
-                        f"<span style='color:#999; font-size:0.85rem;'>　結構低: {stop_struct} / ATR法: {stop_atr}</span>",
-                    ]
-                    st.markdown("<div style='line-height:1.7; font-size:0.95rem;'>" + "<br>".join(entry_rows) + "</div>", unsafe_allow_html=True)
+                    st.markdown(
+                        row_item("🛒", f"<b>建議進場區</b>：{entry_low_v} ~ {entry_high_v}") +
+                        row_item("🛑", f"<b>停損設在</b>：{hard_stop:.2f}　（距現價 -{stop_pct}%）") +
+                        f"<div style='padding-left:1.6rem; font-size:0.85rem; color:#999; margin-bottom:4px;'>結構低: {stop_struct} / ATR法: {stop_atr}</div>",
+                        unsafe_allow_html=True
+                    )
 
                     st.markdown("<div style='margin:8px 0; border-top:1px solid #eee;'></div>", unsafe_allow_html=True)
 
                     # ── 出場警示 ──
                     if exit_signals:
-                        st.markdown("<div style='line-height:1.7; font-size:0.95rem;'>" + "<br>".join(exit_signals) + "</div>", unsafe_allow_html=True)
+                        for sig in exit_signals:
+                            icon, text = sig[:2], sig[2:]
+                            st.markdown(row_item(icon, text), unsafe_allow_html=True)
                     else:
-                        st.markdown("<div style='font-size:0.95rem;'>✅ <b>出場警示</b>：暫無，持續觀察</div>", unsafe_allow_html=True)
+                        st.markdown(row_item("✅", "<b>出場警示</b>：暫無，持續觀察"), unsafe_allow_html=True)
 
                     st.markdown("<div style='margin:8px 0; border-top:1px solid #eee;'></div>", unsafe_allow_html=True)
 
@@ -505,7 +507,7 @@ if selected_stock:
                     else:
                         conclusion = "綜合指標混合訊號，建議保守觀望。"
                         c_dot = dot("yellow")
-                    st.markdown(f"<div style='font-size:0.95rem;'>{c_dot} <b>結論</b>：{conclusion}</div>", unsafe_allow_html=True)
+                    st.markdown(row_item(c_dot, f"<b>結論</b>：{conclusion}"), unsafe_allow_html=True)
                 else:
                     st.write("資料不足，無法計算")
 
