@@ -536,76 +536,78 @@ if selected_stock:
                     df_m, _, _ = calculate_all_indicators(pd.DataFrame({**kbars}), is_day_chart=False)
                     render_kline_chart(df_m, is_day_chart=False)
 
-            if len(df_m) > 20:
-                st.divider()
-                with st.container(border=True):
-                    st.subheader("⚡ 盤中進出場建議")
-                    last_m  = df_m.iloc[-1]
-                    curr_p  = float(last_m['Close'])
-                    vwap_p  = float(last_m['vwap'])
-                    ema9_p  = float(last_m['ema9'])
-                    ema20_p = float(last_m['ema20'])
-                    rsi_m   = float(last_m['RSI'])
-                    k_m     = float(last_m['K'])
-                    d_m     = float(last_m['D'])
-                    macd_m  = float(last_m['OSC'])
+                    if len(df_m) > 20:
+                        st.divider()
+                        with st.container(border=True):
+                            st.subheader("⚡ 盤中進出場建議")
+                            last_m  = df_m.iloc[-1]
+                            curr_p  = float(last_m['Close'])
+                            vwap_p  = float(last_m['vwap'])
+                            ema9_p  = float(last_m['ema9'])
+                            ema20_p = float(last_m['ema20'])
+                            rsi_m   = float(last_m['RSI'])
+                            k_m     = float(last_m['K'])
+                            d_m     = float(last_m['D'])
+                            macd_m  = float(last_m['OSC'])
 
-                    last_ts = pd.to_datetime(last_m['ts'])
-                    st.caption(f"最後更新：{last_ts.strftime('%H:%M')}　{'🔄 自動刷新中' if auto_refresh else '手動模式'}")
+                            last_ts = pd.to_datetime(last_m['ts'])
+                            st.caption(f"最後更新：{last_ts.strftime('%H:%M')}　{'🔄 自動刷新中' if auto_refresh else '手動模式'}")
 
-                    # ── 和風燈號（與日K卡片共用同一色系）──
-                    def dot(level):
-                        colors = {"green": "#7BAE7F", "yellow": "#C9A84C", "red": "#B56576"}
-                        c = colors.get(level, "#999")
-                        return f"<span style='color:{c}; font-size:1.1rem;'>●</span>"
+                            def dot(level):
+                                colors = {"green": "#7BAE7F", "yellow": "#C9A84C", "red": "#B56576"}
+                                c = colors.get(level, "#999")
+                                return f"<span style='color:{c}; font-size:1.1rem;'>●</span>"
 
-                    vwap_dot  = dot("green") if curr_p > vwap_p else dot("red")
-                    vwap_desc = "站上VWAP，買方強勢" if curr_p > vwap_p else "跌破VWAP，賣方主導"
+                            vwap_dot  = dot("green") if curr_p > vwap_p else dot("red")
+                            vwap_desc = "站上VWAP，買方強勢" if curr_p > vwap_p else "跌破VWAP，賣方主導"
 
-                    if curr_p > ema9_p > ema20_p:
-                        ema_dot, ema_desc = dot("green"), "多頭排列，短線偏多"
-                    elif curr_p < ema9_p < ema20_p:
-                        ema_dot, ema_desc = dot("red"), "空頭排列，短線偏空"
-                    else:
-                        ema_dot, ema_desc = dot("yellow"), "EMA糾結，方向不明"
+                            if curr_p > ema9_p > ema20_p:
+                                ema_dot, ema_desc = dot("green"), "多頭排列，短線偏多"
+                            elif curr_p < ema9_p < ema20_p:
+                                ema_dot, ema_desc = dot("red"), "空頭排列，短線偏空"
+                            else:
+                                ema_dot, ema_desc = dot("yellow"), "EMA糾結，方向不明"
 
-                    rsi_dot  = dot("green") if rsi_m < 65 else (dot("yellow") if rsi_m < 75 else dot("red"))
-                    rsi_desc = "動能正常" if rsi_m < 65 else ("略高注意" if rsi_m < 75 else "短線超買")
+                            rsi_dot  = dot("green") if rsi_m < 65 else (dot("yellow") if rsi_m < 75 else dot("red"))
+                            rsi_desc = "動能正常" if rsi_m < 65 else ("略高注意" if rsi_m < 75 else "短線超買")
 
-                    if k_m > d_m and k_m < 50:
-                        kd_dot, kd_desc = dot("green"), "低檔金叉，短線買訊"
-                    elif k_m > d_m and k_m >= 50:
-                        kd_dot, kd_desc = dot("yellow"), "中高檔持多，留意"
-                    elif k_m < d_m and k_m > 70:
-                        kd_dot, kd_desc = dot("red"), "高檔死叉，短線賣訊"
-                    else:
-                        kd_dot, kd_desc = dot("yellow"), "觀望"
+                            if k_m > d_m and k_m < 50:
+                                kd_dot, kd_desc = dot("green"), "低檔金叉，短線買訊"
+                            elif k_m > d_m and k_m >= 50:
+                                kd_dot, kd_desc = dot("yellow"), "中高檔持多，留意"
+                            elif k_m < d_m and k_m > 70:
+                                kd_dot, kd_desc = dot("red"), "高檔死叉，短線賣訊"
+                            else:
+                                kd_dot, kd_desc = dot("yellow"), "觀望"
 
-                    macd_dot  = dot("green") if macd_m > 0 else dot("red")
-                    macd_desc = "動能偏多" if macd_m > 0 else "動能偏空"
+                            macd_dot  = dot("green") if macd_m > 0 else dot("red")
+                            macd_desc = "動能偏多" if macd_m > 0 else "動能偏空"
 
-                    m_rows = [
-                        f"{vwap_dot} <b>VWAP</b>：現價 {curr_p:.2f} vs {vwap_p:.2f} → {vwap_desc}",
-                        f"{ema_dot} <b>EMA排列</b>：{ema_desc}",
-                        f"{rsi_dot} <b>RSI</b>：{rsi_m:.1f} → {rsi_desc}",
-                        f"{kd_dot} <b>KD</b>：K={k_m:.1f} D={d_m:.1f} → {kd_desc}",
-                        f"{macd_dot} <b>MACD動能</b>：{macd_m:.4f} → {macd_desc}",
-                    ]
-                    st.markdown("<div style='line-height:1.7; font-size:0.95rem;'>" + "<br>".join(m_rows) + "</div>", unsafe_allow_html=True)
+                            m_rows = [
+                                f"{vwap_dot} <b>VWAP</b>：現價 {curr_p:.2f} vs {vwap_p:.2f} → {vwap_desc}",
+                                f"{ema_dot} <b>EMA排列</b>：{ema_desc}",
+                                f"{rsi_dot} <b>RSI</b>：{rsi_m:.1f} → {rsi_desc}",
+                                f"{kd_dot} <b>KD</b>：K={k_m:.1f} D={d_m:.1f} → {kd_desc}",
+                                f"{macd_dot} <b>MACD動能</b>：{macd_m:.4f} → {macd_desc}",
+                            ]
+                            st.markdown("<div style='line-height:1.7; font-size:0.95rem;'>" + "<br>".join(m_rows) + "</div>", unsafe_allow_html=True)
 
-                    st.divider()
+                            st.divider()
 
-                    buy_conditions  = sum([curr_p > vwap_p, curr_p > ema9_p > ema20_p, rsi_m < 65, k_m > d_m and k_m < 50, macd_m > 0])
-                    sell_conditions = sum([curr_p < vwap_p, curr_p < ema9_p, rsi_m > 75, k_m < d_m and k_m > 70, macd_m < 0])
+                            buy_conditions  = sum([curr_p > vwap_p, curr_p > ema9_p > ema20_p, rsi_m < 65, k_m > d_m and k_m < 50, macd_m > 0])
+                            sell_conditions = sum([curr_p < vwap_p, curr_p < ema9_p, rsi_m > 75, k_m < d_m and k_m > 70, macd_m < 0])
 
-                    if buy_conditions >= 4:
-                        st.success("● 進場訊號：多項指標同步偏多，可考慮買進")
-                    elif sell_conditions >= 4:
-                        st.error("● 出場訊號：多項指標同步偏空，考慮減碼或出場")
-                    elif buy_conditions >= 3:
-                        st.info("● 偏多觀望：條件尚未全部到位，等待更明確訊號")
-                    else:
-                        st.warning("● 觀望：訊號混合，暫不操作")
+                            if buy_conditions >= 4:
+                                st.success("● 進場訊號：多項指標同步偏多，可考慮買進")
+                            elif sell_conditions >= 4:
+                                st.error("● 出場訊號：多項指標同步偏空，考慮減碼或出場")
+                            elif buy_conditions >= 3:
+                                st.info("● 偏多觀望：條件尚未全部到位，等待更明確訊號")
+                            else:
+                                st.warning("● 觀望：訊號混合，暫不操作")
+
+                except Exception as e:
+                    st.error(f"❌ 1分K 載入失敗：{e}")
         else:
             st.warning("永豐 API 未連線，無法顯示 1 分 K。")
 
