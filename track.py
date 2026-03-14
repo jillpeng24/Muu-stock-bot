@@ -310,20 +310,37 @@ with st.sidebar:
 if selected_stock:
     code = selected_stock.split(" ")[0].strip()
 
-    # ── 取得股票名稱（手動輸入時從永豐API取中文名，選股清單時從selected_stock取）──
+    # ── 取得股票名稱（手動輸入時優先永豐API，備援TWSE，最後才用代號）──
     if " " in selected_stock:
         stock_display = selected_stock  # 選股清單：已有「代號 名稱」
     else:
-        # 手動輸入：優先從永豐API取中文名稱
-        stock_name = code  # 預設用代號
+        stock_name = None
+
+        # 優先：永豐API取中文名
         if api:
             try:
                 contract = api.Contracts.Stocks.get(code) if hasattr(api.Contracts.Stocks, 'get') else api.Contracts.Stocks[code]
-                if contract and hasattr(contract, 'name'):
+                if contract and hasattr(contract, 'name') and contract.name:
                     stock_name = contract.name
             except:
                 pass
-        stock_display = f"{code} {stock_name}"
+
+        # 備援：TWSE公開資料查中文名
+        if not stock_name:
+            try:
+                r = requests.get(f"https://www.twse.com.tw/zh/api/codeQuery?query={code}", timeout=5)
+                if r.status_code == 200:
+                    data = r.json()
+                    suggestions = data.get('suggestions', [])
+                    if suggestions:
+                        # 格式如 "2330	台積電	..."
+                        parts = suggestions[0].split('\t')
+                        if len(parts) >= 2 and parts[0].strip() == code:
+                            stock_name = parts[1].strip()
+            except:
+                pass
+
+        stock_display = f"{code} {stock_name}" if stock_name else code
 
     # ── Bug Fix：用 session_state 儲存日K資料，避免 tab 切換失去變數 ──
     if f"df_d_{code}" not in st.session_state:
