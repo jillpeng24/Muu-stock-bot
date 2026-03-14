@@ -3,3 +3,6 @@ requests
 tqdm
 yfinance
 numpy
+shioaji
+plotly
+streamlit-autorefresh
