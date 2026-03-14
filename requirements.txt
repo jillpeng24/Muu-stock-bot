@@ -6,3 +6,4 @@ numpy
 shioaji
 plotly
 streamlit-autorefresh
+protobuf==3.20.3
