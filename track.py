@@ -168,7 +168,7 @@ def calculate_all_indicators(df, is_day_chart=True):
 #    日K：K線+均線+量 / KD / MACD
 #    1分K：K線+VWAP+量 / KD / MACD
 # ==========================================
-def render_kline_chart(df, is_day_chart=True, entry_low=None, entry_high=None, stop_loss=None):
+def render_kline_chart(df, is_day_chart=True):
     df_plot = df.tail(120 if is_day_chart else 80).copy()
 
     fig = make_subplots(
@@ -221,36 +221,14 @@ def render_kline_chart(df, is_day_chart=True, entry_low=None, entry_high=None, s
     fig.add_trace(go.Scatter(x=df_plot['ts'], y=df_plot['MACD_LINE'], line=dict(color='#3F51B5', width=1.5), name='MACD'), row=3, col=1)
     fig.add_hline(y=0, line_dash="dash", line_color="gray", row=3, col=1, opacity=0.4)
 
-    # ── 日K 進場區間色塊 + 停損線 ──
-    if is_day_chart and entry_low is not None and entry_high is not None:
-        x0 = df_plot['ts'].iloc[0]
-        x1 = df_plot['ts'].iloc[-1]
-        # 進場區間：綠色半透明色塊
-        fig.add_hrect(
-            y0=entry_low, y1=entry_high,
-            fillcolor="rgba(0,200,100,0.12)", line_width=0,
-            annotation_text=f"🟢 進場區 {entry_low:.2f}~{entry_high:.2f}",
-            annotation_position="top left",
-            annotation_font=dict(color="#00897B", size=12),
-            row=1, col=1
-        )
-    if is_day_chart and stop_loss is not None:
-        # 停損線：紅色虛線
-        fig.add_hline(
-            y=stop_loss, line_dash="dash", line_color="#EF5350", line_width=1.5,
-            annotation_text=f"🛑 停損 {stop_loss:.2f}",
-            annotation_position="bottom right",
-            annotation_font=dict(color="#EF5350", size=12),
-            row=1, col=1
-        )
-
     fig.update_layout(
         height=850,
         margin=dict(l=10, r=50, t=30, b=20),
         template="plotly_white",
         xaxis_rangeslider_visible=False,
         showlegend=True,
-        legend=dict(orientation="h", yanchor="bottom", y=1.01, xanchor="left", x=0)
+        legend=dict(orientation="h", yanchor="bottom", y=1.01, xanchor="left", x=0),
+        hovermode="x"
     )
 
     # 日K 排除非交易日（週末假日），修正K線被壓扁問題
@@ -393,14 +371,7 @@ if selected_stock:
     # ── Tab1：日K趨勢 + 進出場參考卡片 ──
     with tab1:
         if not df_d.empty:
-            _last    = df_d.iloc[-1]
-            _curr_c  = float(_last['Close'])
-            _atr     = float(_last['ATR'])
-            _struct  = float(df_d['Low'].squeeze().iloc[-6:-1].min())
-            _stop    = min(round(_curr_c - _atr, 2), round(_struct, 2))
-            _e_high  = round(_curr_c - _atr * 0.5, 2)
-            _e_low   = round(_curr_c - _atr, 2)
-            render_kline_chart(df_d, is_day_chart=True, entry_low=_e_low, entry_high=_e_high, stop_loss=_stop)
+            render_kline_chart(df_d, is_day_chart=True)
         else:
             st.warning(f"無法取得 {code} 的日K資料。")
 
@@ -461,11 +432,17 @@ if selected_stock:
                         exit_signals.append("⚠️ 量縮創高，主力出貨訊號")
 
                     # ── 和風色系燈號定義 ──
-                    # 若草（綠）#7BAE7F　山吹（黃）#C9A84C　緋（紅）#B56576
                     def dot(level):
                         colors = {"green": "#7BAE7F", "yellow": "#C9A84C", "red": "#B56576"}
                         c = colors.get(level, "#999")
                         return f"<span style='color:{c}; font-size:1.1rem;'>●</span>"
+
+                    # ── 現價顯示 ──
+                    price_change = curr_c - float(df_d['Close'].squeeze().iloc[-2])
+                    price_pct    = price_change / float(df_d['Close'].squeeze().iloc[-2]) * 100
+                    price_color  = "#B56576" if price_change >= 0 else "#7BAE7F"
+                    st.markdown(f"<div style='font-size:1.4rem; font-weight:600; color:{price_color};'>{curr_c:.2f} <span style='font-size:1rem;'>({price_pct:+.2f}%)</span></div>", unsafe_allow_html=True)
+                    st.divider()
 
                     adx_dot  = dot("green") if adx_val > 40 else (dot("yellow") if adx_val > 25 else dot("red"))
                     adx_desc = "趨勢強，適合波段" if adx_val > 40 else ("趨勢成形中" if adx_val > 25 else "盤整，暫不適合波段")
@@ -504,8 +481,14 @@ if selected_stock:
 
                     st.divider()
 
-                    # ── 結論 ──
-                    if adx_val > 25 and rsi_val < 65 and abs(bias_20) < 10:
+                    # ── 結論（乖離過大優先警示）──
+                    if abs(bias_20) >= 15:
+                        conclusion = f"20MA乖離 {bias_20:.1f}%，漲勢過度延伸，追高風險極大，建議等回調至 {entry_low_v}~{entry_high_v} 再評估。"
+                        c_dot = dot("red")
+                    elif abs(bias_20) >= 10:
+                        conclusion = f"20MA乖離 {bias_20:.1f}%，偏高，建議等回落至 {entry_low_v}~{entry_high_v} 附近再進場。"
+                        c_dot = dot("yellow")
+                    elif adx_val > 25 and rsi_val < 65:
                         conclusion = f"趨勢明確且動能正常，等回調至 {entry_low_v}~{entry_high_v} 附近進場，停損 {hard_stop:.2f}，風險報酬合理。"
                         c_dot = dot("green")
                     elif adx_val > 25 and rsi_val >= 65:
