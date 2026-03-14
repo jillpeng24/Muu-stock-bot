@@ -333,23 +333,19 @@ with st.sidebar:
 if selected_stock:
     code = selected_stock.split(" ")[0].strip()
 
-    # ── 取得股票名稱（手動輸入時從yfinance抓，選股清單時從selected_stock取）──
+    # ── 取得股票名稱（手動輸入時從永豐API取中文名，選股清單時從selected_stock取）──
     if " " in selected_stock:
         stock_display = selected_stock  # 選股清單：已有「代號 名稱」
     else:
-        # 手動輸入：嘗試從yfinance取名稱
-        @st.cache_data(ttl=86400)
-        def get_stock_name(c):
+        # 手動輸入：優先從永豐API取中文名稱
+        stock_name = code  # 預設用代號
+        if api:
             try:
-                info = yf.Ticker(f"{c}.TW").info
-                name = info.get('longName') or info.get('shortName', '')
-                if not name:
-                    info = yf.Ticker(f"{c}.TWO").info
-                    name = info.get('longName') or info.get('shortName', c)
-                return name
+                contract = api.Contracts.Stocks.get(code) if hasattr(api.Contracts.Stocks, 'get') else api.Contracts.Stocks[code]
+                if contract and hasattr(contract, 'name'):
+                    stock_name = contract.name
             except:
-                return c
-        stock_name = get_stock_name(code)
+                pass
         stock_display = f"{code} {stock_name}"
 
     # ── Bug Fix：用 session_state 儲存日K資料，避免 tab 切換失去變數 ──
@@ -528,12 +524,17 @@ if selected_stock:
     # ── Tab2：1分K狙擊 + 盤中建議 ──
     with tab2:
         if api:
-            kbars = api.kbars(
-                api.Contracts.Stocks[code],
-                start=(datetime.date.today() - datetime.timedelta(days=3)).strftime("%Y-%m-%d")
-            )
-            df_m, _, _ = calculate_all_indicators(pd.DataFrame({**kbars}), is_day_chart=False)
-            render_kline_chart(df_m, is_day_chart=False)
+            contract = api.Contracts.Stocks.get(code) if hasattr(api.Contracts.Stocks, 'get') else api.Contracts.Stocks[code]
+            if contract is None:
+                st.warning(f"⚠️ 找不到 {code} 的合約資料，可能是非交易日或代號有誤。")
+            else:
+                try:
+                    kbars = api.kbars(
+                        contract,
+                        start=(datetime.date.today() - datetime.timedelta(days=3)).strftime("%Y-%m-%d")
+                    )
+                    df_m, _, _ = calculate_all_indicators(pd.DataFrame({**kbars}), is_day_chart=False)
+                    render_kline_chart(df_m, is_day_chart=False)
 
             if len(df_m) > 20:
                 st.divider()
