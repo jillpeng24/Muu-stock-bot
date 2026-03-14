@@ -461,7 +461,7 @@ if selected_stock:
                     ]
                     st.markdown("<div style='line-height:1.7; font-size:0.95rem;'>" + "<br>".join(rows) + "</div>", unsafe_allow_html=True)
 
-                    st.divider()
+                    st.markdown("<div style='margin:8px 0; border-top:1px solid #eee;'></div>", unsafe_allow_html=True)
 
                     # ── 進出場數值 ──
                     entry_rows = [
@@ -471,7 +471,7 @@ if selected_stock:
                     ]
                     st.markdown("<div style='line-height:1.7; font-size:0.95rem;'>" + "<br>".join(entry_rows) + "</div>", unsafe_allow_html=True)
 
-                    st.divider()
+                    st.markdown("<div style='margin:8px 0; border-top:1px solid #eee;'></div>", unsafe_allow_html=True)
 
                     # ── 出場警示 ──
                     if exit_signals:
@@ -479,7 +479,7 @@ if selected_stock:
                     else:
                         st.markdown("<div style='font-size:0.95rem;'>✅ <b>出場警示</b>：暫無，持續觀察</div>", unsafe_allow_html=True)
 
-                    st.divider()
+                    st.markdown("<div style='margin:8px 0; border-top:1px solid #eee;'></div>", unsafe_allow_html=True)
 
                     # ── 結論（乖離過大優先警示）──
                     if abs(bias_20) >= 15:
