@@ -272,7 +272,6 @@ df_list = load_selection_csv()
 
 with st.sidebar:
     st.title("🌿 Stock-Track")
-    st.caption("台股技術分析")
     st.divider()
 
     source_mode = st.radio("資料來源", ["📋 選股清單", "✏️ 手動輸入"], horizontal=True)
