@@ -640,8 +640,8 @@ if selected_stock:
                                 else:
                                     ema_dot, ema_desc = dot("yellow"), "EMA糾結，方向不明"
 
-                                rsi_dot  = dot("green") if rsi_m < 65 else (dot("yellow") if rsi_m < 75 else dot("red"))
-                                rsi_desc = "動能正常" if rsi_m < 65 else ("略高注意" if rsi_m < 75 else "短線超買")
+                                rsi_dot  = dot("green") if rsi_m > 60 else (dot("yellow") if rsi_m >= 40 else dot("red"))
+                                rsi_desc = "動能偏強" if rsi_m > 60 else ("動能中性" if rsi_m >= 40 else "動能偏弱")
 
                                 if k_m > d_m and k_m < 50:
                                     kd_dot, kd_desc = dot("green"), "低檔金叉，短線買訊"
@@ -666,8 +666,8 @@ if selected_stock:
 
                                 st.divider()
 
-                                buy_conditions  = sum([curr_p > vwap_p, curr_p > ema9_p > ema20_p, rsi_m < 65, k_m > d_m and k_m < 50, macd_m > 0])
-                                sell_conditions = sum([curr_p < vwap_p, curr_p < ema9_p, rsi_m > 75, k_m < d_m and k_m > 70, macd_m < 0])
+                                buy_conditions  = sum([curr_p > vwap_p, curr_p > ema9_p > ema20_p, rsi_m > 60, k_m > d_m and k_m < 50, macd_m > 0])
+                                sell_conditions = sum([curr_p < vwap_p, curr_p < ema9_p, rsi_m < 40, k_m < d_m and k_m > 70, macd_m < 0])
 
                                 if buy_conditions >= 4:
                                     st.success("● 進場訊號：多項指標同步偏多，可考慮買進")
@@ -675,6 +675,8 @@ if selected_stock:
                                     st.error("● 出場訊號：多項指標同步偏空，考慮減碼或出場")
                                 elif buy_conditions >= 3:
                                     st.info("● 偏多觀望：條件尚未全部到位，等待更明確訊號")
+                                elif sell_conditions >= 3:
+                                    st.warning("● 偏空觀望：多項指標偏空，暫不追多")
                                 else:
                                     st.warning("● 觀望：訊號混合，暫不操作")
 
