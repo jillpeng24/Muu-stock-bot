@@ -541,6 +541,7 @@ if selected_stock:
                         start=datetime.date.today().strftime("%Y-%m-%d")
                     )
                     df_m_raw = pd.DataFrame({**kbars})
+                    st.caption(f"🔍 欄位：{list(df_m_raw.columns)}　筆數：{len(df_m_raw)}")
                     df_m_raw.rename(columns={
                         'ts': 'ts', 'open': 'Open', 'high': 'High',
                         'low': 'Low', 'close': 'Close', 'volume': 'Volume'
