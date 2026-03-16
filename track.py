@@ -538,20 +538,22 @@ if selected_stock:
                 try:
                     kbars = api.kbars(
                         contract,
-                        start=datetime.date.today().strftime("%Y-%m-%d")
+                        start=(datetime.date.today() - datetime.timedelta(days=3)).strftime("%Y-%m-%d")
                     )
                     df_m_raw = pd.DataFrame({**kbars})
-                    st.caption(f"🔍 欄位：{list(df_m_raw.columns)}　筆數：{len(df_m_raw)}")
-                    df_m_raw.rename(columns={
-                        'ts': 'ts', 'open': 'Open', 'high': 'High',
-                        'low': 'Low', 'close': 'Close', 'volume': 'Volume'
-                    }, inplace=True)
-                    df_m, _, _ = calculate_all_indicators(df_m_raw, is_day_chart=False)
-                    render_kline_chart(df_m, is_day_chart=False)
+                    df_m_raw['ts'] = pd.to_datetime(df_m_raw['ts'])
+                    # 只保留今天的資料
+                    df_m_raw = df_m_raw[df_m_raw['ts'].dt.date == datetime.date.today()].copy()
 
-                    if len(df_m) > 20:
-                        st.divider()
-                        with st.container(border=True):
+                    if df_m_raw.empty or len(df_m_raw) < 2:
+                        st.info("⏳ 今日尚無1分K資料，請稍後重新整理（開盤後約9:05以後才有資料）")
+                    else:
+                        df_m, _, _ = calculate_all_indicators(df_m_raw, is_day_chart=False)
+                        render_kline_chart(df_m, is_day_chart=False)
+
+                        if len(df_m) > 20:
+                            st.divider()
+                            with st.container(border=True):
                             st.subheader("⚡ 盤中進出場建議")
                             last_m  = df_m.iloc[-1]
                             curr_p  = float(last_m['Close'])
