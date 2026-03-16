@@ -540,7 +540,12 @@ if selected_stock:
                         contract,
                         start=datetime.date.today().strftime("%Y-%m-%d")
                     )
-                    df_m, _, _ = calculate_all_indicators(pd.DataFrame({**kbars}), is_day_chart=False)
+                    df_m_raw = pd.DataFrame({**kbars})
+                    df_m_raw.rename(columns={
+                        'ts': 'ts', 'open': 'Open', 'high': 'High',
+                        'low': 'Low', 'close': 'Close', 'volume': 'Volume'
+                    }, inplace=True)
+                    df_m, _, _ = calculate_all_indicators(df_m_raw, is_day_chart=False)
                     render_kline_chart(df_m, is_day_chart=False)
 
                     if len(df_m) > 20:
