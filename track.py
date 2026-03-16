@@ -319,7 +319,7 @@ if selected_stock:
         # 優先：永豐API取中文名
         if api:
             try:
-                contract = api.Contracts.Stocks.get(code) if hasattr(api.Contracts.Stocks, 'get') else api.Contracts.Stocks[code]
+                contract = api.Contracts.Stocks[code]
                 if contract and hasattr(contract, 'name') and contract.name:
                     stock_name = contract.name
             except:
@@ -531,14 +531,14 @@ if selected_stock:
     # ── Tab2：1分K狙擊 + 盤中建議 ──
     with tab2:
         if api:
-            contract = api.Contracts.Stocks.get(code) if hasattr(api.Contracts.Stocks, 'get') else api.Contracts.Stocks[code]
+            contract = api.Contracts.Stocks[code]
             if contract is None:
                 st.warning(f"⚠️ 找不到 {code} 的合約資料，可能是非交易日或代號有誤。")
             else:
                 try:
                     kbars = api.kbars(
                         contract,
-                        start=(datetime.date.today() - datetime.timedelta(days=3)).strftime("%Y-%m-%d")
+                        start=datetime.date.today().strftime("%Y-%m-%d")
                     )
                     df_m, _, _ = calculate_all_indicators(pd.DataFrame({**kbars}), is_day_chart=False)
                     render_kline_chart(df_m, is_day_chart=False)
