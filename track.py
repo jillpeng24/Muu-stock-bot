@@ -232,7 +232,7 @@ def render_kline_chart(df, is_day_chart=True):
 
     # 日K 排除非交易日（週末假日），修正K線被壓扁問題
     if is_day_chart:
-        fig.update_xaxes(rangebreaks=[dict(bounds=["sat", "mon"])])
+        fig.update_xaxes(rangebreaks=[dict(bounds=["sat", "sun"])])
 
     st.plotly_chart(fig, use_container_width=True)
 
@@ -342,11 +342,19 @@ if selected_stock:
 
         stock_display = f"{code} {stock_name}" if stock_name else code
 
-    # ── Bug Fix：用 session_state 儲存日K資料，避免 tab 切換失去變數 ──
-    if f"df_d_{code}" not in st.session_state:
-        df_d_raw = yf.download(f"{code}.TW", period="180d", progress=False)
+    # ── 日K資料：跨天自動重置 ──
+    today_str = datetime.date.today().isoformat()
+    cache_key  = f"df_d_{code}"
+    date_key   = f"df_d_{code}_date"
+
+    # 如果沒有資料，或資料是昨天的，重新下載
+    if cache_key not in st.session_state or st.session_state.get(date_key) != today_str:
+        # 用明確的start/end日期，避免yfinance快取舊資料
+        end_date   = datetime.date.today() + datetime.timedelta(days=1)
+        start_date = datetime.date.today() - datetime.timedelta(days=180)
+        df_d_raw = yf.download(f"{code}.TW", start=start_date, end=end_date, progress=False)
         if df_d_raw.empty:
-            df_d_raw = yf.download(f"{code}.TWO", period="180d", progress=False)
+            df_d_raw = yf.download(f"{code}.TWO", start=start_date, end=end_date, progress=False)
         if not df_d_raw.empty:
             # 修正 yfinance 新版 MultiIndex 欄位問題
             if isinstance(df_d_raw.columns, pd.MultiIndex):
@@ -365,14 +373,82 @@ if selected_stock:
             if all(c in df_d_raw.columns for c in required):
                 df_d_raw = df_d_raw[required].copy()
                 df_d_raw.dropna(inplace=True)
+                df_d_raw.index = pd.to_datetime(df_d_raw.index)
+
+                # ── 永豐日K補丁：補上 yfinance 缺失的近期日期 ──
+                if api:
+                    try:
+                        contract = api.Contracts.Stocks[code]
+                        if contract:
+                            patch_start = (datetime.date.today() - datetime.timedelta(days=30)).strftime("%Y-%m-%d")
+                            patch_end   = (datetime.date.today() + datetime.timedelta(days=1)).strftime("%Y-%m-%d")
+                            kbars = api.kbars(contract, start=patch_start, end=patch_end)
+                            df_patch = pd.DataFrame({**kbars})
+                            if not df_patch.empty:
+                                df_patch['ts'] = pd.to_datetime(df_patch['ts'])
+                                # 永豐日K每天只取一筆（收盤那筆）
+                                df_patch['date'] = df_patch['ts'].dt.date
+                                df_patch = df_patch.groupby('date').agg({
+                                    'Open': 'first', 'High': 'max',
+                                    'Low': 'min', 'Close': 'last', 'Volume': 'sum'
+                                }) if 'Open' in df_patch.columns else df_patch.groupby('date').agg({
+                                    'open': 'first', 'high': 'max',
+                                    'low': 'min', 'close': 'last', 'volume': 'sum'
+                                }).rename(columns={'open':'Open','high':'High','low':'Low','close':'Close','volume':'Volume'})
+                                df_patch.index = pd.to_datetime(df_patch.index)
+                                # 找出 yfinance 缺少的日期
+                                yf_dates    = set(df_d_raw.index.normalize().date)
+                                patch_dates = set(df_patch.index.date)
+                                missing     = patch_dates - yf_dates
+                                if missing:
+                                    df_missing = df_patch.loc[[d in missing for d in df_patch.index.date]]
+                                    df_missing = df_missing[['Open','High','Low','Close','Volume']]
+                                    df_d_raw   = pd.concat([df_d_raw, df_missing]).sort_index()
+                                    st.sidebar.caption(f"🔧 永豐補了 {len(missing)} 天缺失資料")
+                    except Exception as e:
+                        pass
+
+                # ── 永豐 snapshot：更新今天即時價 ──
+                if api:
+                    try:
+                        contract = api.Contracts.Stocks[code]
+                        if contract:
+                            snap = api.snapshots([contract])[0]
+                            if snap.close > 0:
+                                today = pd.Timestamp(datetime.date.today())
+                                if df_d_raw.index.tz is not None:
+                                    today = today.tz_localize(df_d_raw.index.tz)
+                                if df_d_raw.index[-1].date() == datetime.date.today():
+                                    # 更新今天這根
+                                    df_d_raw.iloc[-1, df_d_raw.columns.get_loc('High')]   = max(df_d_raw['High'].iloc[-1], snap.high)
+                                    df_d_raw.iloc[-1, df_d_raw.columns.get_loc('Low')]    = min(df_d_raw['Low'].iloc[-1], snap.low)
+                                    df_d_raw.iloc[-1, df_d_raw.columns.get_loc('Close')]  = snap.close
+                                    df_d_raw.iloc[-1, df_d_raw.columns.get_loc('Volume')] = snap.total_volume * 1000
+                                else:
+                                    # 新增今天這根
+                                    new_row = pd.DataFrame({
+                                        'Open': [snap.open], 'High': [snap.high],
+                                        'Low': [snap.low], 'Close': [snap.close],
+                                        'Volume': [snap.total_volume * 1000]
+                                    }, index=[today])
+                                    df_d_raw = pd.concat([df_d_raw, new_row]).sort_index()
+                    except Exception:
+                        pass
+
                 df_d_raw['ts'] = df_d_raw.index
                 st.session_state[f"df_d_{code}"] = df_d_raw
+                st.session_state[f"df_d_{code}_date"] = today_str
             else:
                 st.session_state[f"df_d_{code}"] = pd.DataFrame()
         else:
             st.session_state[f"df_d_{code}"] = pd.DataFrame()
 
     df_d_raw = st.session_state[f"df_d_{code}"]
+
+    # 除錯：顯示最後一筆資料日期
+    if not df_d_raw.empty:
+        last_date = pd.to_datetime(df_d_raw['ts'].iloc[-1]).date()
+        st.sidebar.caption(f"📅 資料最後日期：{last_date}")
 
     # 計算指標
     if not df_d_raw.empty:
@@ -470,6 +546,9 @@ if selected_stock:
                     bias_10    = (curr_c - ma10_val) / ma10_val * 100
                     adx_prev   = float(df_d['ADX'].squeeze().iloc[-2])
                     adx_slope  = adx_val - adx_prev
+                    plus_di    = float(last['plus_di'])
+                    minus_di   = float(last['minus_di'])
+                    is_bullish = plus_di > minus_di  # 多頭方向
                     above_20ma = curr_c > float(last['ma20'])
                     above_10ma = curr_c > ma10_val
                     above_5ma  = curr_c > float(last['ma5'])
@@ -478,10 +557,24 @@ if selected_stock:
                     def row_item(dot_html, text):
                         return f"<div style='display:flex; align-items:baseline; line-height:1.7; margin-bottom:2px;'><span style='flex-shrink:0; margin-right:6px;'>{dot_html}</span><span style='font-size:0.95rem;'>{text}</span></div>"
 
-                    # ── 燈號 ──
-                    adx_dot   = dot("green") if adx_val > 40 else (dot("yellow") if adx_val > 25 else dot("red"))
+                    # ── ADX + DI方向 + 斜率 完整判斷 ──
                     adx_trend = "↗ 加速" if adx_slope > 1 else ("→ 穩定" if adx_slope > -1 else "↘ 衰退")
-                    adx_desc  = f"{'趨勢強' if adx_val > 40 else ('成形中' if adx_val > 25 else '盤整')}　{adx_trend}"
+
+                    if adx_val <= 25:
+                        adx_dot  = dot("yellow")
+                        adx_desc = f"盤整，等方向　{adx_trend}"
+                    elif is_bullish and adx_slope > -1:
+                        adx_dot  = dot("green")
+                        adx_desc = f"強勢多頭　{adx_trend}　(+DI {plus_di:.1f} > -DI {minus_di:.1f})"
+                    elif is_bullish and adx_slope <= -1:
+                        adx_dot  = dot("yellow")
+                        adx_desc = f"多頭末段，留意　{adx_trend}　(+DI {plus_di:.1f} > -DI {minus_di:.1f})"
+                    elif not is_bullish and adx_slope > -1:
+                        adx_dot  = dot("red")
+                        adx_desc = f"強勢空頭，避開　{adx_trend}　(-DI {minus_di:.1f} > +DI {plus_di:.1f})"
+                    else:
+                        adx_dot  = dot("yellow")
+                        adx_desc = f"空頭衰退，觀望　{adx_trend}　(-DI {minus_di:.1f} > +DI {plus_di:.1f})"
 
                     rsi_dot  = dot("green") if rsi_val < 65 else (dot("yellow") if rsi_val < 75 else dot("red"))
                     rsi_desc = "動能正常" if rsi_val < 65 else ("略高，留意" if rsi_val < 75 else "超買，勿追")
@@ -562,9 +655,9 @@ if selected_stock:
 
                     st.markdown("<div style='margin:8px 0; border-top:1px solid #eee;'></div>", unsafe_allow_html=True)
 
-                    # ── 結論（強勢股邏輯）──
-                    if not above_20ma:
-                        conclusion = "跌破20MA，結構破壞，暫不建議操作，等待回穩再評估。"
+                    # ── 結論（強勢股邏輯 + DI方向）──
+                    if not above_20ma or (not is_bullish and adx_val > 40):
+                        conclusion = "跌破20MA或強勢空頭，結構破壞，暫不建議操作。" if not above_20ma else f"強勢空頭（-DI {minus_di:.1f} > +DI {plus_di:.1f}），避免進場，等待方向反轉。"
                         c_dot = dot("red")
                     elif not above_10ma:
                         conclusion = "跌破10MA開始警示，若無量縮止跌訊號，考慮先減碼觀察。"
