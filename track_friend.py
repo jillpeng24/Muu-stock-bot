@@ -321,29 +321,66 @@ if selected_stock:
                 pass
         stock_display = f"{code} {stock_name}" if stock_name else code
 
-    # 下載日K資料（拉5年確保週K月K有足夠資料）
-    if f"df_d_{code}" not in st.session_state:
-        df_d_raw = yf.download(f"{code}.TW", period="5y", progress=False)
+    # 下載日K資料（FinMind為主，跨天自動重置）
+    today_str = datetime.date.today().isoformat()
+    if f"df_d_{code}" not in st.session_state or st.session_state.get(f"df_d_{code}_date") != today_str:
+
+        def load_finmind(stock_id):
+            """用 FinMind API 抓台股日K資料"""
+            try:
+                token = st.secrets["finmind"]["token"]
+                start = (datetime.date.today() - datetime.timedelta(days=365*5)).strftime("%Y-%m-%d")
+                url = "https://api.finmindtrade.com/api/v4/data"
+                params = {
+                    "dataset": "TaiwanStockPrice",
+                    "data_id": stock_id,
+                    "start_date": start,
+                    "token": token
+                }
+                r = requests.get(url, params=params, timeout=15)
+                if r.status_code == 200:
+                    data = r.json()
+                    if data.get("status") == 200 and data.get("data"):
+                        df = pd.DataFrame(data["data"])
+                        df["date"] = pd.to_datetime(df["date"])
+                        df = df.set_index("date").sort_index()
+                        df.rename(columns={
+                            "open": "Open", "max": "High", "min": "Low",
+                            "close": "Close", "Trading_Volume": "Volume"
+                        }, inplace=True)
+                        return df[["Open", "High", "Low", "Close", "Volume"]]
+            except Exception:
+                pass
+            return pd.DataFrame()
+
+        # 優先用 FinMind
+        df_d_raw = load_finmind(code)
+
+        # FinMind 失敗才用 yfinance 備援
         if df_d_raw.empty:
-            df_d_raw = yf.download(f"{code}.TWO", period="5y", progress=False)
+            end_date   = datetime.date.today() + datetime.timedelta(days=1)
+            start_date = datetime.date.today() - datetime.timedelta(days=365*5)
+            df_d_raw = yf.download(f"{code}.TW", start=start_date, end=end_date, progress=False)
+            if df_d_raw.empty:
+                df_d_raw = yf.download(f"{code}.TWO", start=start_date, end=end_date, progress=False)
+            if not df_d_raw.empty:
+                if isinstance(df_d_raw.columns, pd.MultiIndex):
+                    df_d_raw.columns = df_d_raw.columns.get_level_values(0)
+                df_d_raw.rename(columns=lambda x: x.capitalize(), inplace=True)
+                df_d_raw.index = pd.to_datetime(df_d_raw.index)
+
         if not df_d_raw.empty:
-            if isinstance(df_d_raw.columns, pd.MultiIndex):
-                df_d_raw.columns = df_d_raw.columns.get_level_values(0)
-            col_map = {}
-            for c in df_d_raw.columns:
-                cl = c.lower().replace(' ', '_')
-                if cl == 'open':   col_map[c] = 'Open'
-                elif cl == 'high': col_map[c] = 'High'
-                elif cl == 'low':  col_map[c] = 'Low'
-                elif cl in ('close', 'adj_close'): col_map[c] = 'Close'
-                elif cl == 'volume': col_map[c] = 'Volume'
-            df_d_raw.rename(columns=col_map, inplace=True)
             required = ['Open', 'High', 'Low', 'Close', 'Volume']
-            if all(c in df_d_raw.columns for c in required):
+            for col in required:
+                if col not in df_d_raw.columns:
+                    df_d_raw = pd.DataFrame()
+                    break
+            if not df_d_raw.empty:
                 df_d_raw = df_d_raw[required].copy()
                 df_d_raw.dropna(inplace=True)
                 df_d_raw['ts'] = df_d_raw.index
                 st.session_state[f"df_d_{code}"] = df_d_raw
+                st.session_state[f"df_d_{code}_date"] = today_str
             else:
                 st.session_state[f"df_d_{code}"] = pd.DataFrame()
         else:
