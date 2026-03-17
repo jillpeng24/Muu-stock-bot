@@ -779,3 +779,5 @@ if selected_stock:
             st.warning("永豐 API 未連線，無法顯示 1 分 K。")
 
 
+
+
