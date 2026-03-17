@@ -457,6 +457,9 @@ if selected_stock:
                 bias_10    = (curr_c - ma10_val) / ma10_val * 100
                 adx_prev   = float(df_d['ADX'].squeeze().iloc[-2])
                 adx_slope  = adx_val - adx_prev
+                plus_di    = float(last['plus_di'])
+                minus_di   = float(last['minus_di'])
+                is_bullish = plus_di > minus_di
                 above_20ma = curr_c > float(last['ma20'])
                 above_10ma = curr_c > ma10_val
                 above_5ma  = curr_c > float(last['ma5'])
@@ -470,9 +473,23 @@ if selected_stock:
                 def row_item(dot_html, text):
                     return f"<div style='display:flex; align-items:baseline; line-height:1.7; margin-bottom:2px;'><span style='flex-shrink:0; margin-right:6px;'>{dot_html}</span><span style='font-size:0.95rem;'>{text}</span></div>"
 
-                adx_dot   = dot("green") if adx_val > 40 else (dot("yellow") if adx_val > 25 else dot("red"))
+                # ── ADX + DI方向 + 斜率完整判斷 ──
                 adx_trend = "↗ 加速" if adx_slope > 1 else ("→ 穩定" if adx_slope > -1 else "↘ 衰退")
-                adx_desc  = f"{'趨勢強' if adx_val > 40 else ('成形中' if adx_val > 25 else '盤整')}　{adx_trend}"
+                if adx_val <= 25:
+                    adx_dot  = dot("yellow")
+                    adx_desc = f"盤整，等方向　{adx_trend}"
+                elif is_bullish and adx_slope > -1:
+                    adx_dot  = dot("green")
+                    adx_desc = f"強勢多頭　{adx_trend}　(+DI {plus_di:.1f} > -DI {minus_di:.1f})"
+                elif is_bullish and adx_slope <= -1:
+                    adx_dot  = dot("yellow")
+                    adx_desc = f"多頭末段，留意　{adx_trend}　(+DI {plus_di:.1f} > -DI {minus_di:.1f})"
+                elif not is_bullish and adx_slope > -1:
+                    adx_dot  = dot("red")
+                    adx_desc = f"強勢空頭，避開　{adx_trend}　(-DI {minus_di:.1f} > +DI {plus_di:.1f})"
+                else:
+                    adx_dot  = dot("yellow")
+                    adx_desc = f"空頭衰退，觀望　{adx_trend}　(-DI {minus_di:.1f} > +DI {plus_di:.1f})"
 
                 rsi_dot  = dot("green") if rsi_val < 65 else (dot("yellow") if rsi_val < 75 else dot("red"))
                 rsi_desc = "動能正常" if rsi_val < 65 else ("略高，留意" if rsi_val < 75 else "超買，勿追")
@@ -546,8 +563,8 @@ if selected_stock:
 
                 st.markdown("<div style='margin:8px 0; border-top:1px solid #eee;'></div>", unsafe_allow_html=True)
 
-                if not above_20ma:
-                    conclusion = "跌破20MA，結構破壞，暫不建議操作，等待回穩再評估。"
+                if not above_20ma or (not is_bullish and adx_val > 40):
+                    conclusion = "跌破20MA，結構破壞，暫不建議操作。" if not above_20ma else f"強勢空頭（-DI {minus_di:.1f} > +DI {plus_di:.1f}），避免進場，等待方向反轉。"
                     c_dot = dot("red")
                 elif not above_10ma:
                     conclusion = "跌破10MA開始警示，若無量縮止跌訊號，考慮先減碼觀察。"
