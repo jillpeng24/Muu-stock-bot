@@ -445,11 +445,6 @@ if selected_stock:
 
     df_d_raw = st.session_state[f"df_d_{code}"]
 
-    # 除錯：顯示最後一筆資料日期
-    if not df_d_raw.empty:
-        last_date = pd.to_datetime(df_d_raw['ts'].iloc[-1]).date()
-        st.sidebar.caption(f"📅 資料最後日期：{last_date}")
-
     # 計算指標
     if not df_d_raw.empty:
         df_d, day_score, day_checks = calculate_all_indicators(df_d_raw, is_day_chart=True)
@@ -777,7 +772,5 @@ if selected_stock:
                     st.error(f"❌ 1分K 載入失敗：{e}")
         else:
             st.warning("永豐 API 未連線，無法顯示 1 分 K。")
-
-
 
 
