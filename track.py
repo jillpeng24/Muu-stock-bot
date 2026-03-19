@@ -18,7 +18,7 @@ except ImportError:
 # ==========================================
 # 1. 頁面基本設定
 # ==========================================
-st.set_page_config(page_title="ZenTrade x TOTHEMOON", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="Trade x TOTHEMOON", layout="wide", initial_sidebar_state="expanded")
 
 st.markdown("""
     <style>
@@ -280,7 +280,7 @@ def load_selection_csv():
 df_list = load_selection_csv()
 
 with st.sidebar:
-    st.title("🌿 ZenTrade")
+    st.title("🌿 Trade-Track")
 
     # ── 雙模式資料來源 ──
     source_mode = st.radio("資料來源", ["📋 選股清單", "✏️ 手動輸入"], horizontal=True)
@@ -478,7 +478,7 @@ if selected_stock:
 
         with col1:
             with st.container(border=True):
-                st.subheader(f"📝 7 項技術檢核 ({day_score}/7)")
+                st.subheader(f"📝 技術檢核 ({day_score}/7)")
                 if day_checks:
                     for item in day_checks:
                         st.write(item)
@@ -488,6 +488,14 @@ if selected_stock:
                 # ── 基本面資料（從CSV的檢核結果欄位）──
                 if not df_list.empty and code in df_list['代號'].astype(str).values:
                     stock_row = df_list[df_list['代號'].astype(str) == code].iloc[0]
+                    
+                    # === 👇 新增這段：法人籌碼分類 👇 ===
+                    if '分類' in stock_row and pd.notna(stock_row['分類']) and str(stock_row['分類']).strip() and str(stock_row['分類']).strip() != '-':
+                        st.divider()
+                        st.subheader("📊 法人籌碼")
+                        st.write(str(stock_row['分類']).strip())
+                    # === 👆 新增結束 👆 ===
+
                     if '檢核結果' in stock_row and pd.notna(stock_row['檢核結果']):
                         st.divider()
                         st.subheader("📋 基本面檢核")
