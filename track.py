@@ -302,8 +302,8 @@ with st.sidebar:
     auto_refresh = st.toggle("開啟自動刷新（盤中用）", value=False)
     if auto_refresh:
         if HAS_AUTOREFRESH:
-            st_autorefresh(interval=60000, key="min_k_refresh")  # 每60秒刷新
-            st.caption("🔄 每 60 秒自動更新 1 分 K")
+            st_autorefresh(interval=30000, key="min_k_refresh")  # 每30秒刷新
+            st.caption("🔄 每 30 秒自動更新 1 分 K")
         else:
             st.caption("⚠️ 請安裝：pip install streamlit-autorefresh")
 
