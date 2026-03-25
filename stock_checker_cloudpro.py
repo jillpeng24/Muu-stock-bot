@@ -1,10 +1,60 @@
 # stock_checker_pro.py
 import os
+import requests
 import pandas as pd
 import numpy as np
 import glob
 from datetime import datetime
 from tqdm import tqdm
+
+# ==========================================
+# FinMind API 設定
+# ==========================================
+FINMIND_API_URL = "https://api.finmindtrade.com/api/v4/data"
+
+def get_token():
+    env_token = os.environ.get("FINMIND_TOKEN")
+    if env_token:
+        return env_token
+    config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config", ".env")
+    if os.path.exists(config_path):
+        with open(config_path, "r", encoding="utf-8") as f:
+            for line in f:
+                if line.startswith("FINMIND_TOKEN"):
+                    return line.split("=")[1].strip().strip('"').strip("'")
+    return ""
+
+TOKEN = get_token()
+
+def fetch_margin(stock_id):
+    """抓取最近融資使用率"""
+    print(f"  🔍 fetch_margin: TOKEN={'有' if TOKEN else '無'}, stock_id={stock_id}")
+    if not TOKEN:
+        print("  ❌ TOKEN為空，跳過融資檢核")
+        return None
+    try:
+        from datetime import timedelta
+        start = (datetime.now() - timedelta(days=10)).strftime("%Y-%m-%d")
+        params = {
+            "dataset": "TaiwanStockMarginPurchaseShortSale",
+            "data_id": stock_id,
+            "start_date": start,
+            "token": TOKEN
+        }
+        resp = requests.get(FINMIND_API_URL, params=params, timeout=15)
+        res = resp.json()
+        if res.get("status") == 200 and res.get("data"):
+            df = pd.DataFrame(res["data"])
+            df = df.sort_values("date")
+            last = df.iloc[-1]
+            # 融資使用率 = 融資餘額 / 融資限額
+            if last.get("MarginPurchaseLimit", 0) > 0:
+                usage = last["MarginPurchaseTodayBalance"] / last["MarginPurchaseLimit"] * 100
+                return round(usage, 1)
+    except Exception as e:
+        print(f"  ❌ 融資API錯誤: {e}")
+        pass
+    return None
 
 # ==========================================
 # 1. 設定 (動態路徑，完美適應 Mac 與 GitHub 雲端)
@@ -114,6 +164,18 @@ def run_comprehensive_check(stock_id, stock_name, chip_data=None):
     
     return results
 
+def add_margin_check(stock_id, result_dict):
+    """只對通過的股票加入融資檢核"""
+    margin = fetch_margin(stock_id)
+    if margin is None:
+        return result_dict
+    if margin < 20:
+        result_dict["檢核結果"] += f" | ✓ 融資使用率{margin}%"
+    else:
+        w = result_dict["警示"]
+        result_dict["警示"] = f"⚠️ 融資使用率{margin}%" if w == "-" else w + f" | ⚠️ 融資使用率{margin}%"
+    return result_dict
+
 # ==========================================
 # 4. 主執行邏輯 (100% 復刻您原本的流程)
 # ==========================================
@@ -146,7 +208,7 @@ def main():
         
         inst_val = row.get('買超比率', row.get('inst_ratio_20d', 0))
         
-        final_list.append({
+        result_row = {
             "代號": sid,
             "名稱": sname,
             "分類": row.get('分類', '-'),
@@ -155,7 +217,11 @@ def main():
             "警示": " | ".join(check["warnings"]) if check["warnings"] else "-",
             "_pass_order": 1 if check["pass"] else 0,
             "_inst_val": inst_val
-        })
+        }
+        # 只對通過的股票加入融資檢核
+        if check["pass"]:
+            result_row = add_margin_check(sid, result_row)
+        final_list.append(result_row)
 
     df_result = pd.DataFrame(final_list)
     df_result = df_result.sort_values(by=["_pass_order", "_inst_val"], ascending=[False, False])
