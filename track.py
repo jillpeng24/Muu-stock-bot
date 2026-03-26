@@ -247,7 +247,7 @@ GITHUB_REPO   = "Muu-stock-bot"
 GITHUB_BRANCH = "main"
 GITHUB_CSV_URL = f"https://raw.githubusercontent.com/{GITHUB_USER}/{GITHUB_REPO}/{GITHUB_BRANCH}/data/latest_selection.csv"
 
-@st.cache_data(ttl=43200)  # 快取12小時
+@st.cache_data(ttl=21600)  # 快取6小時
 def load_selection_csv():
     """從 GitHub public repo 抓 latest_selection.csv，找不到則備援本機"""
     try:
@@ -780,5 +780,7 @@ if selected_stock:
                     st.error(f"❌ 1分K 載入失敗：{e}")
         else:
             st.warning("永豐 API 未連線，無法顯示 1 分 K。")
+
+
 
 
