@@ -301,11 +301,13 @@ with st.sidebar:
     st.markdown("**⚡ 1分K 自動刷新**")
     auto_refresh = st.toggle("開啟自動刷新（盤中用）", value=False)
     if auto_refresh:
-        if HAS_AUTOREFRESH:
-            st_autorefresh(interval=30000, key="min_k_refresh")  # 每30秒刷新
-            st.caption("🔄 每 30 秒自動更新 1 分 K")
-        else:
-            st.caption("⚠️ 請安裝：pip install streamlit-autorefresh")
+        st.caption("🔄 每 30 秒自動更新 1 分 K")
+    else:
+        st.caption("")
+
+# ── autorefresh 放在 sidebar 外，避免 session 初始化問題 ──
+if 'auto_refresh' in dir() and auto_refresh and HAS_AUTOREFRESH:
+    st_autorefresh(interval=30000, key="min_k_refresh")
 
 if selected_stock:
     code = selected_stock.split(" ")[0].strip()
@@ -780,9 +782,5 @@ if selected_stock:
                     st.error(f"❌ 1分K 載入失敗：{e}")
         else:
             st.warning("永豐 API 未連線，無法顯示 1 分 K。")
-
-
-
-
 
 
