@@ -2,12 +2,12 @@ name: Stock Auto Runner
 
 on:
   schedule:
-    # 台北時間 16:33 執行 (UTC 08:33)
+    # 台北時間 16:33（收盤後），UTC 08:33，僅週一至週五
     - cron: '33 8 * * 1-5'
   workflow_dispatch: # 允許手動點擊執行
 
 jobs:
-  build:
+  stock_analysis:
     runs-on: ubuntu-latest
 
     steps:
@@ -17,7 +17,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.10'
+          python-version: '3.10.x'
 
       - name: Install dependencies
         run: |
@@ -35,6 +35,6 @@ jobs:
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
-          git add data/*.csv
+          git add data/*.csv 2>/dev/null || true
           git commit -m "Auto-update stock results $(date +'%Y-%m-%d')" || exit 0
           git push
