@@ -3,7 +3,7 @@ import subprocess
 import pandas as pd
 import requests
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 # ==========================================
 # 設定與路徑 (完全對齊 GitHub 工作目錄)
@@ -11,6 +11,36 @@ from datetime import datetime
 BASE_DIR = Path(__file__).parent.resolve()
 DATA_DIR = BASE_DIR / "data"
 LINE_API_URL = "https://api.line.me/v2/bot/message/push"
+
+def is_market_open_today():
+    """透過證交所 MIS 即時系統檢查今天台股是否有開市"""
+    # 🌟 強制使用台灣時間 (UTC+8) 避免 GitHub 伺服器時區誤判
+    tw_tz = timezone(timedelta(hours=8))
+    today = datetime.now(tw_tz)
+    today_str = today.strftime("%Y%m%d")
+    
+    # 週末直接判定休市，不發送網路請求
+    if today.weekday() >= 5:
+        return False
+        
+    url = "https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=tse_t00.tw"
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    }
+    
+    try:
+        response = requests.get(url, headers=headers, timeout=15)
+        if response.status_code == 200:
+            data = response.json()
+            latest_trade_date = data["msgArray"][0]["d"]
+            # 如果大盤最新交易日等於今天，代表有開市
+            return latest_trade_date == today_str
+        else:
+            print(f"⚠️ 證交所 MIS API 異常 (狀態碼: {response.status_code})，預設繼續執行。")
+            return True
+    except Exception as e:
+        print(f"⚠️ 判斷開市狀態時發生網路錯誤 ({e})，預設視為有開市。")
+        return True
 
 def load_config():
     """從 GitHub Secrets (環境變數) 讀取設定"""
@@ -59,7 +89,9 @@ def push_optimized_results(final_csv):
     if "技術面得分" in df.columns:
         df = df.sort_values(by="技術面得分", ascending=False)
     
-    today = datetime.now().strftime("%Y-%m-%d")
+    # 🌟 確保報表上的日期是台灣時間
+    tw_tz = timezone(timedelta(hours=8))
+    today = datetime.now(tw_tz).strftime("%Y-%m-%d")
     header = f"🏆 籌碼+技術面最終選股報表\n📅 日期：{today}\n📊 總計：{len(df)} 檔\n"
     header += "══════════════\n"
     
@@ -84,8 +116,14 @@ def push_optimized_results(final_csv):
     print(f"✅ 已完成 {len(df)} 檔股票的合併推播。")
 
 def main():
-    print(f"=== ⚙️ GitHub 自動化排程啟動 ({datetime.now().strftime('%Y-%m-%d %H:%M')}) ===")
+    tw_tz = timezone(timedelta(hours=8))
+    print(f"=== ⚙️ GitHub 自動化排程啟動 ({datetime.now(tw_tz).strftime('%Y-%m-%d %H:%M')}) ===")
     
+    # 🌟 檢查今天台股是否有開市
+    if not is_market_open_today():
+        print("📅 經 MIS 系統確認今日台股休市，系統自動停止後續動作。")
+        return
+        
     # 確保 data 資料夾存在
     os.makedirs(DATA_DIR, exist_ok=True)
     
