@@ -2,6 +2,7 @@ import os
 import subprocess
 import pandas as pd
 import requests
+import re  # 🌟 新增：用於正則表達式，辨識檔名中的日期
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
 
@@ -115,6 +116,35 @@ def push_optimized_results(final_csv):
     send_line_request(token, user_id, all_msg)
     print(f"✅ 已完成 {len(df)} 檔股票的合併推播。")
 
+def cleanup_old_csv(days=30):
+    """🌟 自動打掃：清理 data 資料夾中超過指定天數的舊 CSV 報表"""
+    print(f"\n🧹 開始清理 {days} 天前的舊報表...")
+    tw_tz = timezone(timedelta(hours=8))
+    threshold_date = datetime.now(tw_tz) - timedelta(days=days)
+    
+    count = 0
+    # 掃描 data 資料夾下所有的 csv 檔案
+    for file_path in DATA_DIR.glob("*.csv"):
+        # 尋找檔名中的日期格式 (例如 2026-05-27 或 20260527)
+        match = re.search(r"(\d{4}[-_]?\d{2}[-_]?\d{2})", file_path.name)
+        if match:
+            # 將找到的日期統一轉為 YYYYMMDD
+            date_str = match.group(1).replace("-", "").replace("_", "")
+            try:
+                file_date = datetime.strptime(date_str, "%Y%m%d").replace(tzinfo=tw_tz)
+                # 如果檔案的日期比門檻日期還舊，就刪除！
+                if file_date < threshold_date:
+                    os.remove(file_path)
+                    print(f"🗑️ 已刪除舊檔: {file_path.name}")
+                    count += 1
+            except ValueError:
+                continue
+                
+    if count == 0:
+        print("✨ 沒有需要清理的舊報表，環境很乾淨。")
+    else:
+        print(f"✅ 自動打掃完畢，共清除了 {count} 個過期檔案。")
+
 def main():
     tw_tz = timezone(timedelta(hours=8))
     print(f"=== ⚙️ GitHub 自動化排程啟動 ({datetime.now(tw_tz).strftime('%Y-%m-%d %H:%M')}) ===")
@@ -147,6 +177,9 @@ def main():
         push_optimized_results(latest_file)
     else:
         print("⚠️ 找不到最終選股檔案。")
+
+    # 🌟 機器人下班前，順便打掃環境！(設定保留 30 天)
+    cleanup_old_csv(days=30)
 
     print("\n✨ GitHub Actions 任務已完成！")
 
