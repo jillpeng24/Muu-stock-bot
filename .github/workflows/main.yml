@@ -37,4 +37,5 @@ jobs:
           git config --local user.name "GitHub Action"
           git add data/*.csv 2>/dev/null || true
           git commit -m "Auto-update stock results $(date +'%Y-%m-%d')" || exit 0
+          git pull origin main --no-rebase -X ours
           git push
