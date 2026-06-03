@@ -8,6 +8,7 @@ from plotly.subplots import make_subplots
 import yfinance as yf
 import requests
 import io
+import glob 
 
 # ==========================================
 # 1. 頁面基本設定
@@ -19,6 +20,28 @@ st.markdown("""
     .stApp { background-color: #FAF9F6; color: #546E7A; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; }
     [data-testid="stSidebar"] { background-color: #F0EFEB; }
     h1, h2, h3 { color: #333333 !important; }
+    
+    /* 🌟 無印質感升級版：柔和米黃 + 圓角微陰影 */
+    .link-btn {
+        display: inline-block;
+        padding: 5px 14px;
+        font-size: 13px;
+        font-weight: 500;
+        color: #6B5E53 !important;      /* 溫潤的大地灰褐文字 */
+        background-color: #F9F6F0;    /* 柔和的米黃背景 */
+        border: 1px solid #EAE3D9;    /* 極淡的暖色邊框 */
+        border-radius: 8px;           /* 四方微圓邊 */
+        text-decoration: none;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.02); /* 增加高級感的極淡陰影 */
+        transition: all 0.2s ease;
+    }
+    .link-btn:hover {
+        background-color: #F0EBE1;    /* 滑鼠懸停時微深的米色 */
+        color: #4A4036 !important;
+        border-color: #DCD3C6;
+        box-shadow: 0 4px 8px rgba(0,0,0,0.05); /* 懸停時陰影加深 */
+        transform: translateY(-1px);  /* 懸停時按鈕微幅上浮的質感動畫 */
+    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -244,36 +267,55 @@ GITHUB_BRANCH = "main"
 GITHUB_CSV_URL = f"https://raw.githubusercontent.com/{GITHUB_USER}/{GITHUB_REPO}/{GITHUB_BRANCH}/data/latest_selection.csv"
 
 @st.cache_data(ttl=3600)
-def load_selection_csv():
+def load_selection_csv(file_path_or_url):
     try:
-        r = requests.get(GITHUB_CSV_URL, timeout=10)
-        if r.status_code == 200:
-            r.encoding = 'utf-8-sig'
-            df = pd.read_csv(io.StringIO(r.text))
-            for col in df.columns:
-                if '代號' in str(col):
-                    df.rename(columns={col: '代號'}, inplace=True)
-                    break
-            return df
-    except:
-        pass
-    import glob
-    local_files = sorted(glob.glob("data/final_selection_*.csv"), reverse=True)
-    if local_files:
-        df = pd.read_csv(local_files[0], encoding='utf-8-sig')
+        if file_path_or_url.startswith("http"):
+            r = requests.get(file_path_or_url, timeout=10)
+            if r.status_code == 200:
+                r.encoding = 'utf-8-sig'
+                df = pd.read_csv(io.StringIO(r.text))
+            else:
+                return pd.DataFrame()
+        else:
+            df = pd.read_csv(file_path_or_url, encoding='utf-8-sig')
+            
         for col in df.columns:
             if '代號' in str(col):
                 df.rename(columns={col: '代號'}, inplace=True)
                 break
         return df
-    return pd.DataFrame()
-
-df_list = load_selection_csv()
+    except:
+        return pd.DataFrame()
 
 with st.sidebar:
     st.title("🌿 Stock-Track")
-    st.caption("台股技術分析")
     st.divider()
+
+    # === 歷史日期選單 ===
+    history_files = sorted(glob.glob("data/final_selection_*.csv"), reverse=True)
+    
+    date_options = ["🔥 最新戰報 "]
+    file_mapping = {"🔥 最新戰報 ": "data/latest_selection.csv"} 
+    
+    for f in history_files:
+        date_str = os.path.basename(f).replace("final_selection_", "").replace(".csv", "")
+        try:
+            if "-" not in date_str:
+                formatted_date = datetime.datetime.strptime(date_str, "%Y%m%d").strftime("%Y-%m-%d")
+            else:
+                formatted_date = date_str
+            opt_name = f"📅 歷史戰報 ({formatted_date})"
+        except:
+            opt_name = f"📅 歷史戰報 ({date_str})"
+            
+        if opt_name not in date_options:
+            date_options.append(opt_name)
+            file_mapping[opt_name] = f
+    
+    selected_date_opt = st.selectbox("選擇戰報日期：", date_options)
+    target_file = file_mapping[selected_date_opt]
+    df_list = load_selection_csv(target_file)
+    # =================================
 
     source_mode = st.radio("資料來源", ["📋 選股清單", "✏️ 手動輸入"], horizontal=True)
 
@@ -311,22 +353,19 @@ if selected_stock:
         if not stock_name:
             try:
                 info = yf.Ticker(f"{code}.TW").fast_info
-                # fast_info 沒有名稱，改用 ticker info
                 full_info = yf.Ticker(f"{code}.TW").info
                 name_raw = full_info.get('shortName', '') or full_info.get('longName', '')
-                # 過濾掉純英文（yfinance 台股名稱有時是英文）
                 if name_raw and any('\u4e00' <= c <= '\u9fff' for c in name_raw):
                     stock_name = name_raw
             except:
                 pass
         stock_display = f"{code} {stock_name}" if stock_name else code
 
-    # 下載日K資料（FinMind為主，跨天自動重置）
+    # 下載日K資料
     today_str = datetime.date.today().isoformat()
     if f"df_d_{code}" not in st.session_state or st.session_state.get(f"df_d_{code}_date") != today_str:
 
         def load_finmind(stock_id):
-            """用 FinMind API 抓台股日K資料"""
             try:
                 token = st.secrets["finmind"]["token"]
                 start = (datetime.date.today() - datetime.timedelta(days=365*5)).strftime("%Y-%m-%d")
@@ -353,10 +392,8 @@ if selected_stock:
                 pass
             return pd.DataFrame()
 
-        # 優先用 FinMind
         df_d_raw = load_finmind(code)
 
-        # FinMind 失敗才用 yfinance 備援
         if df_d_raw.empty:
             end_date   = datetime.date.today() + datetime.timedelta(days=1)
             start_date = datetime.date.today() - datetime.timedelta(days=365*5)
@@ -394,14 +431,27 @@ if selected_stock:
         df_d = pd.DataFrame()
         day_score, day_checks = 0, []
 
-    # 現價
+    # 現價與外部連結
     if not df_d.empty:
         _last_c = float(df_d['Close'].squeeze().iloc[-1])
         _prev_c = float(df_d['Close'].squeeze().iloc[-2])
         _chg    = _last_c - _prev_c
         _chg_pct = _chg / _prev_c * 100
-        st.subheader(f"📊 {stock_display} 戰情室")
-        st.metric(label="", value=f"{_last_c:.2f}", delta=f"{_chg:+.2f} ({_chg_pct:+.2f}%)")
+        
+        # === 標題與高級感按鈕水平並排 ===
+        wantgoo_url = f"https://www.wantgoo.com/stock/{code}"
+        st.markdown(f"""
+            <div style='display: flex; align-items: center; gap: 12px; margin-bottom: 15px;'>
+                <h3 style='margin: 0; padding: 0;'>📊 {stock_display} 戰情室</h3>
+                <a href='{wantgoo_url}' target='_blank' class='link-btn'>🔗 玩股網查詢</a>
+            </div>
+        """, unsafe_allow_html=True)
+        # ==================================================
+        
+        # 只保留現價顯示，乾淨俐落
+        st.metric(label="現價", value=f"{_last_c:.2f}", delta=f"{_chg:+.2f} ({_chg_pct:+.2f}%)")
+             
+        st.divider()
 
         # ── 日K / 週K / 月K 切換 ──
         chart_type = st.radio("K線週期", ["日K", "週K", "月K"], horizontal=True, index=0)
@@ -430,6 +480,7 @@ if selected_stock:
                     st.subheader("📋 基本面檢核")
                     for item in str(stock_row['檢核結果']).split(' | '):
                         st.write(item.strip())
+                
                 if '警示' in stock_row and pd.notna(stock_row['警示']) and stock_row['警示'] != '-':
                     st.divider()
                     st.subheader("⚠️ 警示")
