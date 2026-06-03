@@ -439,12 +439,12 @@ if selected_stock:
         _chg    = _last_c - _prev_c
         _chg_pct = _chg / _prev_c * 100
         
-        # === 標題與高級感按鈕水平並排 (支援手機版自動折行) ===
+        # === 🌟 標題與高級感按鈕水平並排 (終極防斷字版) ===
         wantgoo_url = f"https://www.wantgoo.com/stock/{code}"
         st.markdown(f"""
             <div style='display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 15px;'>
-                <h3 style='margin: 0; padding: 0; word-break: keep-all;'>📊 {stock_display} 戰情室</h3>
-                <a href='{wantgoo_url}' target='_blank' class='link-btn'>🔗 玩股網查詢</a>
+                <h3 style='margin: 0; padding: 0; white-space: nowrap;'>📊 {stock_display} 戰情室</h3>
+                <a href='{wantgoo_url}' target='_blank' class='link-btn' style='margin-bottom: 0;'>🔗 玩股網查詢</a>
             </div>
         """, unsafe_allow_html=True)
         # ==================================================
