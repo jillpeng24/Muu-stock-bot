@@ -292,41 +292,52 @@ with st.sidebar:
     st.title("🌿 Stock-Track")
     st.divider()
 
-    # === 歷史日期選單 ===
-    history_files = sorted(glob.glob("data/final_selection_*.csv"), reverse=True)
-    
-    date_options = ["🔥 最新戰報 "]
-    file_mapping = {"🔥 最新戰報 ": "data/latest_selection.csv"} 
-    
-    for f in history_files:
-        date_str = os.path.basename(f).replace("final_selection_", "").replace(".csv", "")
-        try:
-            if "-" not in date_str:
-                formatted_date = datetime.datetime.strptime(date_str, "%Y%m%d").strftime("%Y-%m-%d")
-            else:
-                formatted_date = date_str
-            opt_name = f"📅 歷史戰報 ({formatted_date})"
-        except:
-            opt_name = f"📅 歷史戰報 ({date_str})"
-            
-        if opt_name not in date_options:
-            date_options.append(opt_name)
-            file_mapping[opt_name] = f
-    
-    selected_date_opt = st.selectbox("選擇戰報日期：", date_options)
-    target_file = file_mapping[selected_date_opt]
-    df_list = load_selection_csv(target_file)
-    # =================================
-
+    # === 🌟 資料來源與選股邏輯整合 (極致緊湊版) ===
     source_mode = st.radio("資料來源", ["📋 選股清單", "✏️ 手動輸入"], horizontal=True)
+    # (移除了多餘的空白行)
 
     if source_mode == "📋 選股清單":
-        if not df_list.empty:
-            selected_stock = st.selectbox("請選擇標的：", df_list['代號'].astype(str) + " " + df_list['名稱'])
+        # 1. 抓取所有歷史檔案
+        history_files = sorted(glob.glob("data/final_selection_*.csv"), reverse=True)
+        
+        if history_files:
+            date_options = []
+            file_mapping = {}
+            
+            for f in history_files:
+                date_str = os.path.basename(f).replace("final_selection_", "").replace(".csv", "")
+                try:
+                    if "-" not in date_str:
+                        formatted_date = datetime.datetime.strptime(date_str, "%Y%m%d").strftime("%Y-%m-%d")
+                    else:
+                        formatted_date = date_str
+                    opt_name = f"戰報 {formatted_date}"
+                except:
+                    opt_name = f"戰報 {date_str}"
+                    
+                if opt_name not in date_options:
+                    date_options.append(opt_name)
+                    file_mapping[opt_name] = f
+            
+            # 2. 顯示戰報日期下拉選單
+            selected_date_opt = st.selectbox("選擇戰報日期：", date_options)
+            target_file = file_mapping[selected_date_opt]
+            df_list = load_selection_csv(target_file)
+            
+            # (移除了干擾視覺的分隔線 st.divider)
+            
+            # 3. 顯示該日期的股票清單 (緊接在日期下方)
+            if not df_list.empty:
+                selected_stock = st.selectbox("請選擇標的：", df_list['代號'].astype(str) + " " + df_list['名稱'])
+            else:
+                st.warning("該日清單為空，請改用手動輸入")
+                selected_stock = st.text_input("輸入台股代號：", value="2330")
         else:
-            st.warning("選股清單尚未載入，請改用手動輸入")
+            st.warning("尚無選股清單資料，請改用手動輸入")
             selected_stock = st.text_input("輸入台股代號：", value="2330")
+
     else:
+        # 手動輸入模式
         manual_input = st.text_input("輸入台股代號：", value="2330", placeholder="例如：2330、00631L")
         selected_stock = manual_input.strip()
 
