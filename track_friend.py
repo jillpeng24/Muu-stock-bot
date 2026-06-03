@@ -326,17 +326,25 @@ with st.sidebar:
 
     else:
         # 手動輸入模式
+        df_list = pd.DataFrame()
         manual_input = st.text_input("輸入台股代號：", value="2330", placeholder="例如：2330、00631L")
         selected_stock = manual_input.strip()
 
 if selected_stock:
     code = selected_stock.split(" ")[0].strip()
 
-    # 取得中文名稱
-    if " " in selected_stock:
-        stock_display = selected_stock
+    # 🌟 1. 字數防呆：不到 4 碼不執行，避免 Streamlit 狂發網路請求導致卡頓
+    if len(code) < 4:
+        st.info("💡 請輸入完整的台股代號（例如：2330、00631L）來啟動戰情室。")
     else:
-        stock_name = None
+        # 🌟 2. UX 升級：加入讀取動畫，緩解等待的焦慮感
+        with st.spinner(f"🚀 正在為您載入 {code} 的即時戰情，請稍候..."):
+            
+            # ── 取得股票名稱（手動輸入時優先永豐API，備援TWSE，最後才用代號）──
+            if " " in selected_stock:
+                stock_display = selected_stock  # 選股清單：已有「代號 名稱」
+            else:
+                stock_name = None
         # 先試 TWSE
         try:
             r = requests.get(f"https://www.twse.com.tw/zh/api/codeQuery?query={code}", timeout=5)
