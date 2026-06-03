@@ -34,6 +34,7 @@ st.markdown("""
         text-decoration: none;
         box-shadow: 0 2px 4px rgba(0,0,0,0.02); /* 增加高級感的極淡陰影 */
         transition: all 0.2s ease;
+        white-space: nowrap;          /* 🌟 新增：確保手機版按鈕文字絕對不換行 */
     }
     .link-btn:hover {
         background-color: #F0EBE1;    /* 滑鼠懸停時微深的米色 */
@@ -438,11 +439,11 @@ if selected_stock:
         _chg    = _last_c - _prev_c
         _chg_pct = _chg / _prev_c * 100
         
-        # === 標題與高級感按鈕水平並排 ===
+        # === 標題與高級感按鈕水平並排 (支援手機版自動折行) ===
         wantgoo_url = f"https://www.wantgoo.com/stock/{code}"
         st.markdown(f"""
-            <div style='display: flex; align-items: center; gap: 12px; margin-bottom: 15px;'>
-                <h3 style='margin: 0; padding: 0;'>📊 {stock_display} 戰情室</h3>
+            <div style='display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 15px;'>
+                <h3 style='margin: 0; padding: 0; word-break: keep-all;'>📊 {stock_display} 戰情室</h3>
                 <a href='{wantgoo_url}' target='_blank' class='link-btn'>🔗 玩股網查詢</a>
             </div>
         """, unsafe_allow_html=True)
