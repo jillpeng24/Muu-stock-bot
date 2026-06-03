@@ -35,7 +35,10 @@ jobs:
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
-          git add data/*.csv 2>/dev/null || true
-          git commit -m "Auto-update stock results $(date +'%Y-%m-%d')" || exit 0
+          
+          # 🌟 關鍵修改：使用 -A 追蹤所有變動（包含新增與刪除）
+          git add -A data/
+          
+          git commit -m "Auto-update and cleanup stock results $(date +'%Y-%m-%d')" || exit 0
           git pull origin main --no-rebase -X ours
           git push
