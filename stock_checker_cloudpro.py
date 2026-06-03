@@ -1,181 +1,237 @@
-# update_data.py (修正版 v6 - 維持股數單位，新增股價欄位)
+# stock_checker_pro.py
 import os
-import time
 import requests
 import pandas as pd
-from datetime import datetime, timedelta
+import numpy as np
+import glob
+from datetime import datetime
+from tqdm import tqdm
 
 # ==========================================
-# 設定：資料存放路徑
+# FinMind API 設定
 # ==========================================
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DATA_DIR = os.path.join(BASE_DIR, "data")
-CHIPS_FILE = os.path.join(DATA_DIR, "daily_chips_all.csv")
+FINMIND_API_URL = "https://api.finmindtrade.com/api/v4/data"
 
-if not os.path.exists(DATA_DIR):
-    os.makedirs(DATA_DIR)
+def get_token():
+    env_token = os.environ.get("FINMIND_TOKEN")
+    if env_token:
+        return env_token
+    config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config", ".env")
+    if os.path.exists(config_path):
+        with open(config_path, "r", encoding="utf-8") as f:
+            for line in f:
+                if line.startswith("FINMIND_TOKEN"):
+                    return line.split("=")[1].strip().strip('"').strip("'")
+    return ""
 
-# ==========================================
-# 工具函式
-# ==========================================
-def clean_value(x):
-    """清理數值，移除逗號與特殊符號並轉換為浮點數"""
-    if pd.isna(x) or str(x).strip() in ['-', '', '0', '0.0', '--']:
-        return 0.0
+TOKEN = get_token()
+
+def fetch_margin(stock_id):
+    """抓取最近融資使用率"""
+    print(f"  🔍 fetch_margin: TOKEN={'有' if TOKEN else '無'}, stock_id={stock_id}")
+    if not TOKEN:
+        print("  ❌ TOKEN為空，跳過融資檢核")
+        return None
     try:
-        cleaned = str(x).replace(',', '').replace('X', '').replace('<p>', '')
-        return float(cleaned)
-    except:
-        return 0.0
-
-def is_company_stock(stock_id: str) -> bool:
-    """判斷是否為一般公司股票（4碼數字且不以0開頭）"""
-    return stock_id.isdigit() and len(stock_id) == 4 and not stock_id.startswith("0")
-
-def fetch_twse_api(url, desc):
-    """呼叫證交所 API"""
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Referer': 'https://www.twse.com.tw/'
-    }
-    try:
-        res = requests.get(url, headers=headers, timeout=15)
-        if res.status_code == 200:
-            return res.json()
+        from datetime import timedelta
+        start = (datetime.now() - timedelta(days=10)).strftime("%Y-%m-%d")
+        params = {
+            "dataset": "TaiwanStockMarginPurchaseShortSale",
+            "data_id": stock_id,
+            "start_date": start,
+            "token": TOKEN
+        }
+        resp = requests.get(FINMIND_API_URL, params=params, timeout=15)
+        res = resp.json()
+        if res.get("status") == 200 and res.get("data"):
+            df = pd.DataFrame(res["data"])
+            df = df.sort_values("date")
+            last = df.iloc[-1]
+            # 融資使用率 = 融資餘額 / 融資限額
+            if last.get("MarginPurchaseLimit", 0) > 0:
+                usage = last["MarginPurchaseTodayBalance"] / last["MarginPurchaseLimit"] * 100
+                return round(usage, 1)
     except Exception as e:
-        print(f"      ❌ {desc} 抓取失敗: {e}")
+        print(f"  ❌ 融資API錯誤: {e}")
+        pass
     return None
 
 # ==========================================
-# 主程式：更新籌碼資料
+# 1. 設定 (動態路徑，完美適應 Mac 與 GitHub 雲端)
 # ==========================================
-def update_chips():
-    df_old = pd.DataFrame()
-    last_date = None
-    if os.path.exists(CHIPS_FILE):
-        try:
-            df_old = pd.read_csv(CHIPS_FILE, dtype={'stock_id': str})
-            df_old['date'] = pd.to_datetime(df_old['date'])
-            last_date = df_old['date'].max()
-        except:
-            pass
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DATA_DIR = os.path.join(BASE_DIR, "data")
+HISTORY_DIR = os.path.join(DATA_DIR, "history")
 
-    today = datetime.now()
-    
-    if last_date is None:
-        start_date = today - timedelta(days=40)
-        print(f"🚀 初次執行：補全最近 20 個交易日的資料 (從 {start_date.strftime('%Y-%m-%d')} 起查詢)...")
-    else:
-        start_date = last_date + timedelta(days=1)
-        if start_date.date() > today.date():
-            print("✨ 本地資料已是最新日期，無需下載。")
-            return
-        print(f"🔄 增量更新：正在檢查 {start_date.strftime('%Y-%m-%d')} 之後的新資料...")
+REV_FILE = os.path.join(HISTORY_DIR, "revenue_history.csv")
+EPS_FILE = os.path.join(HISTORY_DIR, "eps_history.csv")
+DIV_FILE = os.path.join(HISTORY_DIR, "dividend_history.csv")
 
-    new_dfs = []
-    current_date = start_date
-    
-    while current_date.date() <= today.date():
-        f_date = current_date.strftime('%Y%m%d')
-        
-        url_inst = f"https://www.twse.com.tw/rwd/zh/fund/T86?date={f_date}&selectType=ALLBUT0999&response=json"
-        js_inst = fetch_twse_api(url_inst, f"{f_date} 三大法人")
-        
-        if js_inst and js_inst.get('stat') == 'OK':
-            inst_data = []
-            for r in js_inst['data']:
-                sid = r[0].strip()
-                if is_company_stock(sid):
-                    # 🌟 聽你的！維持股數，不除以 1000，確保與舊資料單位一致
-                    foreign_shares = clean_value(r[4])
-                    trust_shares = clean_value(r[10])
-                    dealer_shares = clean_value(r[11])
-                    
-                    inst_data.append({
-                        'stock_id': sid,
-                        'name': r[1].strip(),
-                        'foreign': foreign_shares,
-                        'trust': trust_shares,
-                        'dealer': dealer_shares
-                    })
+# ==========================================
+# 2. 預載本地歷史資料庫
+# ==========================================
+def safe_load(path):
+    """安全讀取 CSV，如果檔案不存在則回傳空 DataFrame"""
+    if os.path.exists(path):
+        df = pd.read_csv(path, dtype={'stock_id': str})
+        df['date'] = pd.to_datetime(df['date'])
+        return df.sort_values(['stock_id', 'date'])
+    return pd.DataFrame()
+
+print("📂 正在從雲端本地歷史庫預載數據 (零 API 消耗)...")
+df_rev_all = safe_load(REV_FILE)
+df_eps_all = safe_load(EPS_FILE)
+df_div_all = safe_load(DIV_FILE)
+
+# ==========================================
+# 3. 核心檢核引擎 (⚠️ 100% 復刻原始邏輯，僅微調負營收文字)
+# ==========================================
+def run_comprehensive_check(stock_id, stock_name, chip_data=None):
+    results = {"pass": True, "reasons": [], "warnings": []}
+    yoy_val = -999.0  
+    original_conditions_met = True 
+
+    # 1. 營收檢核
+    try:
+        df_rev = df_rev_all[df_rev_all['stock_id'] == stock_id].copy()
+        if not df_rev.empty and len(df_rev) >= 12:
+            latest = df_rev.iloc[-1]
+            prev_year = df_rev.iloc[-13] if len(df_rev) >= 13 else df_rev.iloc[-12]
+            yoy = ((latest['revenue'] - prev_year['revenue']) / prev_year['revenue'] * 100)
+            yoy_val = yoy
             
-            df_day = pd.DataFrame(inst_data)
+            if yoy <= 0:
+                original_conditions_met = False
+                # 🚀 這是唯一允許的修改：改回您喜歡的簡潔格式
+                results["reasons"].append(f"營收YoY {yoy:.1f}%")
+            else:
+                results["reasons"].append(f"✓ 營收YoY成長{yoy:.1f}%")
             
-            if not df_day.empty:
-                # 取得 MI_INDEX 成交量與價格
-                url_mi = f"https://www.twse.com.tw/rwd/zh/afterTrading/MI_INDEX?date={f_date}&type=ALLBUT0999&response=json"
-                js_mi = fetch_twse_api(url_mi, f"{f_date} 成交行情")
-                
-                vol_map = {}
-                price_map = {}
-                
-                if js_mi and js_mi.get('stat') == 'OK':
-                    tables = js_mi.get('tables', [])
-                    for table in tables:
-                        if isinstance(table, dict):
-                            data = table.get('data', [])
-                            for row in data:
-                                if isinstance(row, list) and len(row) >= 9:
-                                    stock_id = str(row[0]).strip()
-                                    if is_company_stock(stock_id):
-                                        # 維持股數
-                                        vol_map[stock_id] = clean_value(row[2])
-                                        # 抓取 高、低、收 價
-                                        price_map[stock_id] = {
-                                            'high': clean_value(row[6]),
-                                            'low': clean_value(row[7]),
-                                            'close': clean_value(row[8])
-                                        }
-                
-                df_day['volume'] = df_day['stock_id'].map(lambda x: vol_map.get(x, 0))
-                
-                # 新增價格欄位
-                df_day['high'] = df_day['stock_id'].map(lambda x: price_map.get(x, {}).get('high', 0.0))
-                df_day['low'] = df_day['stock_id'].map(lambda x: price_map.get(x, {}).get('low', 0.0))
-                df_day['close'] = df_day['stock_id'].map(lambda x: price_map.get(x, {}).get('close', 0.0))
-                
-                df_day['total_inst'] = df_day['foreign'] + df_day['trust'] + df_day['dealer']
-                df_day['inst_buy_ratio'] = df_day.apply(
-                    lambda x: round(x['total_inst'] / x['volume'] * 100, 2) if x['volume'] > 0 else 0, 
-                    axis=1
-                )
-                df_day['date'] = current_date.strftime('%Y-%m-%d')
-                
-                new_dfs.append(df_day)
-                
-                valid_vol_count = (df_day['volume'] > 0).sum()
-                avg_vol = df_day[df_day['volume'] > 0]['volume'].mean() if valid_vol_count > 0 else 0
-                print(f"      ✅ {f_date}: {len(df_day)} 檔，{valid_vol_count} 檔有量，已成功抓取股價。")
-        
-        current_date += timedelta(days=1)
-        time.sleep(8)
+            # 季增率 QoQ 邏輯 (近三月 vs 前三月)
+            if len(df_rev) >= 6:
+                current_q = df_rev['revenue'].iloc[-3:].sum()
+                prev_q = df_rev['revenue'].iloc[-6:-3].sum()
+                qoq = ((current_q - prev_q) / prev_q * 100) if prev_q > 0 else 0
+                if qoq < 0:
+                    results["warnings"].append(f"警示季增率QoQ為負({qoq:.1f}%)")
+                else:
+                    results["reasons"].append(f"季增率QoQ({qoq:.1f}%)")
+            
+            if latest['revenue'] >= df_rev['revenue'].max():
+                results["reasons"].append("🔥 月營收創歷史新高")
+    except Exception:
+        original_conditions_met = False
 
-    if new_dfs:
-        df_new = pd.concat(new_dfs, ignore_index=True)
-        df_new['date'] = pd.to_datetime(df_new['date'])
-        
-        df_final = pd.concat([df_old, df_new], ignore_index=True)
-        df_final.drop_duplicates(subset=['date', 'stock_id'], keep='last', inplace=True)
-        df_final.sort_values(['date', 'stock_id'], ascending=[True, True], inplace=True)
-        
-        unique_dates = sorted(df_final['date'].unique())
-        if len(unique_dates) > 20:
-            cutoff_date = unique_dates[-20]
-            df_final = df_final[df_final['date'] >= cutoff_date]
-            print(f"🧹 已清理舊資料 (保留 {cutoff_date.date()} 至今)")
+    # 2. EPS 檢核
+    try:
+        df_eps = df_eps_all[df_eps_all['stock_id'] == stock_id]
+        if not df_eps.empty:
+            if any(df_eps.tail(20)['eps'] <= 0):
+                original_conditions_met = False
+                results["reasons"].append("❌ 5年內有EPS虧損")
+            else:
+                results["reasons"].append("✓ 5年EPS均為正")
+        else:
+            original_conditions_met = False
+    except Exception:
+        original_conditions_met = False
 
-        df_final.to_csv(CHIPS_FILE, index=False, encoding='utf-8-sig')
-        
-        total_rows = len(df_final)
-        valid_vol_rows = (df_final['volume'] > 0).sum()
-        vol_rate = (valid_vol_rows / total_rows * 100) if total_rows > 0 else 0
-        avg_inst_ratio = df_final[df_final['volume'] > 0]['inst_buy_ratio'].mean()
-        
-        print(f"\n🎉 資料庫已更新！")
-        print(f"📅 日期範圍: {df_final['date'].min().date()} ~ {df_final['date'].max().date()}")
-        print(f"📊 股價(High/Low/Close)已順利併入！")
+    # 3. 股利檢核
+    try:
+        df_div = df_div_all[df_div_all['stock_id'] == stock_id]
+        if not df_div.empty:
+            if len(df_div['date'].dt.year.unique()) < 5:
+                original_conditions_met = False
+                results["reasons"].append("❌ 連續發股利不滿5年")
+            else:
+                results["reasons"].append("✓ 連續5年發股利")
+        else:
+            original_conditions_met = False
+    except Exception:
+        original_conditions_met = False
+
+    # --- 關鍵判定邏輯：(全過) 或 (YoY > 40%) ---
+    if original_conditions_met or yoy_val > 40:
+        results["pass"] = True
     else:
-        print("\nℹ️ 檢查完畢，今日證交所尚未提供更多新資料。")
+        results["pass"] = False
+
+    # 4. 法人籌碼資訊 (維持原文字內容)
+    if chip_data is not None:
+        inst_buy_ratio = chip_data.get('買超比率', chip_data.get('inst_buy_ratio', 0))
+        if not pd.isna(inst_buy_ratio):
+            results["reasons"].append(f"法人本日買超比{inst_buy_ratio:.2f}%")
+    
+    return results
+
+def add_margin_check(stock_id, result_dict):
+    """只對通過的股票加入融資檢核"""
+    margin = fetch_margin(stock_id)
+    if margin is None:
+        return result_dict
+    if margin < 20:
+        result_dict["檢核結果"] += f" | ✓ 融資使用率{margin}%"
+    else:
+        w = result_dict["警示"]
+        result_dict["警示"] = f"⚠️ 融資使用率{margin}%" if w == "-" else w + f" | ⚠️ 融資使用率{margin}%"
+    return result_dict
+
+# ==========================================
+# 4. 主執行邏輯 (100% 復刻您原本的流程)
+# ==========================================
+def main():
+    scan_files = glob.glob(os.path.join(DATA_DIR, "scan_result_*.csv"))
+    if not scan_files: return
+    
+    input_file = max(scan_files, key=os.path.getctime)
+    print(f"讀取輸入檔案: {os.path.basename(input_file)}")
+
+    df_candidates = pd.read_csv(input_file)
+    if df_candidates.empty: return
+
+    col_map = {}
+    for col in df_candidates.columns:
+        if col in ['代號', 'stock_id']: col_map['id'] = col
+        if col in ['名稱', 'name']: col_map['name'] = col
+    if 'id' not in col_map: col_map['id'] = df_candidates.columns[1]
+    if 'name' not in col_map: col_map['name'] = df_candidates.columns[2]
+
+    today_str = datetime.now().strftime("%Y%m%d")
+    output_file = os.path.join(DATA_DIR, f"comprehensive_check_{today_str}.csv")
+
+    final_list = []
+    for _, row in tqdm(df_candidates.iterrows(), total=len(df_candidates), desc="全面檢核進度"):
+        sid = str(row[col_map['id']])
+        sname = str(row[col_map['name']])
+        
+        check = run_comprehensive_check(sid, sname, chip_data=row)
+        
+        inst_val = row.get('買超比率', row.get('inst_ratio_20d', 0))
+        
+        result_row = {
+            "代號": sid,
+            "名稱": sname,
+            "分類": row.get('分類', '-'),
+            "狀態": "✅ 通過" if check["pass"] else "❌ 未通過",
+            "檢核結果": " | ".join(check["reasons"]),
+            "警示": " | ".join(check["warnings"]) if check["warnings"] else "-",
+            "_pass_order": 1 if check["pass"] else 0,
+            "_inst_val": inst_val
+        }
+        # 只對通過的股票加入融資檢核
+        if check["pass"]:
+            result_row = add_margin_check(sid, result_row)
+        final_list.append(result_row)
+
+    df_result = pd.DataFrame(final_list)
+    df_result = df_result.sort_values(by=["_pass_order", "_inst_val"], ascending=[False, False])
+    
+    output_cols = ["代號", "名稱", "分類", "狀態", "檢核結果", "警示"]
+    
+    df_result[output_cols].to_csv(output_file, index=False, encoding='utf-8-sig')
+    # ============================
+    df_result[output_cols].to_csv(output_file, index=False, encoding='utf-8-sig')
+    print(f"\n✅ 檢核完成！檔案已存至：{output_file}")
 
 if __name__ == "__main__":
-    update_chips()
+    main()
