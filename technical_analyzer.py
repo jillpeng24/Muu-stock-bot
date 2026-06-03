@@ -183,12 +183,5 @@ def start_technical_analysis():
     df_final_output.to_csv(out_path, index=False, encoding='utf-8-sig')
     print(f"\n💾 最終選股名單已儲存: {os.path.basename(out_path)}")
 
-    # ==========================================
-    # 👇 請在這裡補上這兩行 (for 技術分析網頁）
-    # ==========================================
-    latest_path = os.path.join(DATA_DIR, "latest_selection.csv")
-    df_final_output.to_csv(latest_path, index=False, encoding='utf-8-sig')
-    print(f"🔄 同步更新網頁端專用檔案: latest_selection.csv")
-
 if __name__ == "__main__":
     start_technical_analysis()

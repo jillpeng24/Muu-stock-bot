@@ -262,24 +262,12 @@ def render_kline_chart(df, chart_type='日K'):
 # ==========================================
 
 # ── 載入選股清單 ──
-GITHUB_USER   = "jillpeng24"
-GITHUB_REPO   = "Muu-stock-bot"
-GITHUB_BRANCH = "main"
-GITHUB_CSV_URL = f"https://raw.githubusercontent.com/{GITHUB_USER}/{GITHUB_REPO}/{GITHUB_BRANCH}/data/latest_selection.csv"
-
 @st.cache_data(ttl=3600)
-def load_selection_csv(file_path_or_url):
+def load_selection_csv(file_path):
+    """直接讀取本地端的 CSV 檔案"""
     try:
-        if file_path_or_url.startswith("http"):
-            r = requests.get(file_path_or_url, timeout=10)
-            if r.status_code == 200:
-                r.encoding = 'utf-8-sig'
-                df = pd.read_csv(io.StringIO(r.text))
-            else:
-                return pd.DataFrame()
-        else:
-            df = pd.read_csv(file_path_or_url, encoding='utf-8-sig')
-            
+        df = pd.read_csv(file_path, encoding='utf-8-sig')
+        # 確保代號欄位名稱統一
         for col in df.columns:
             if '代號' in str(col):
                 df.rename(columns={col: '代號'}, inplace=True)
