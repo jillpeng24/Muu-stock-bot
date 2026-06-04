@@ -434,20 +434,37 @@ elif nav_mode in ["🎯 個股戰情室", "✏️ 手動輸入"] and selected_st
             except Exception:
                 pass
             return pd.DataFrame()
+df_d_raw = load_finmind(code)
 
-        df_d_raw = load_finmind(code)
-
-        if df_d_raw.empty:
-            end_date   = datetime.date.today() + datetime.timedelta(days=1)
-            start_date = datetime.date.today() - datetime.timedelta(days=180) # 更新為 180 天
-            df_d_raw = yf.download(f"{code}.TW", start=start_date, end=end_date, progress=False)
+            # === 🌟 修正：FinMind 盤中時間差與備援觸發機制 ===
+            need_yfinance = False
+            today_date = datetime.date.today()
+            
             if df_d_raw.empty:
-                df_d_raw = yf.download(f"{code}.TWO", start=start_date, end=end_date, progress=False)
-            if not df_d_raw.empty:
-                if isinstance(df_d_raw.columns, pd.MultiIndex):
-                    df_d_raw.columns = df_d_raw.columns.get_level_values(0)
-                df_d_raw.rename(columns=lambda x: x.capitalize(), inplace=True)
-                df_d_raw.index = pd.to_datetime(df_d_raw.index)
+                need_yfinance = True
+            else:
+                # 取得 FinMind 最後一筆資料的日期
+                last_date = df_d_raw.index[-1].date()
+                # 如果最後一筆資料不是今天，且今天是工作日 (週一=0 ~ 週五=4)
+                # 代表現在可能是盤中，FinMind 還沒更新今天的 K 棒！強制啟動 Yahoo 備援！
+                if last_date < today_date and today_date.weekday() < 5:
+                    need_yfinance = True
+
+            if need_yfinance:
+                end_date   = datetime.date.today() + datetime.timedelta(days=1)
+                start_date = datetime.date.today() - datetime.timedelta(days=180)
+                yf_df = yf.download(f"{code}.TW", start=start_date, end=end_date, progress=False)
+                if yf_df.empty:
+                    yf_df = yf.download(f"{code}.TWO", start=start_date, end=end_date, progress=False)
+                
+                if not yf_df.empty:
+                    if isinstance(yf_df.columns, pd.MultiIndex):
+                        yf_df.columns = yf_df.columns.get_level_values(0)
+                    yf_df.rename(columns=lambda x: x.capitalize(), inplace=True)
+                    yf_df.index = pd.to_datetime(yf_df.index)
+                    # 用 Yahoo 的最新即時資料完美覆蓋
+                    df_d_raw = yf_df  
+            # === 修正結束 ===
 
         if not df_d_raw.empty:
             required = ['Open', 'High', 'Low', 'Close', 'Volume']
