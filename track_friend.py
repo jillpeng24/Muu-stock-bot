@@ -57,7 +57,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. 核心指標計算引擎（僅日K）
+# 2. 核心指標計算引擎（含 OBV 籌碼升級）
 # ==========================================
 def calculate_all_indicators(df):
     if df.empty:
@@ -113,6 +113,10 @@ def calculate_all_indicators(df):
     df['DIF']       = ema12 - ema26
     df['MACD_LINE'] = df['DIF'].ewm(span=9).mean()
     df['OSC']       = df['DIF'] - df['MACD_LINE']
+
+    # 🌟 新增：OBV 能量潮指標計算 (抓取隱藏的主力買氣)
+    df['OBV'] = (np.sign(df['Close'].diff()) * df['Volume']).fillna(0).cumsum()
+    df['OBV_ma10'] = df['OBV'].rolling(10).mean()
 
     # 7項技術檢核
     score = 0
@@ -385,10 +389,8 @@ elif nav_mode in ["🎯 個股戰情室", "✏️ 手動輸入"] and selected_st
             
             # ── 取得股票名稱 ──
             if " " in selected_stock:
-                # 情況A：選股清單已經有名字了，直接拿來用！（不用發網路請求，秒開🚀）
                 stock_display = selected_stock  
             else:
-                # 情況B：只有「手動輸入」才需要去網路查名字
                 try:
                     r = requests.get(f"https://www.twse.com.tw/zh/api/codeQuery?query={code}", timeout=3)
                     if r.status_code == 200:
@@ -422,7 +424,7 @@ elif nav_mode in ["🎯 個股戰情室", "✏️ 手動輸入"] and selected_st
                         if "finmind" in st.secrets and "token" in st.secrets["finmind"]:
                             token = st.secrets["finmind"]["token"]
                         else:
-                            token = "" # 如果沒有 token 就留空
+                            token = "" 
                         
                         start = (datetime.date.today() - datetime.timedelta(days=180)).strftime("%Y-%m-%d")
                         url = "https://api.finmindtrade.com/api/v4/data"
@@ -457,9 +459,7 @@ elif nav_mode in ["🎯 個股戰情室", "✏️ 手動輸入"] and selected_st
                 if df_d_raw.empty:
                     need_yfinance = True
                 else:
-                    # 取得 FinMind 最後一筆資料的日期
                     last_date = df_d_raw.index[-1].date()
-                    # 如果最後一筆資料小於今天，且今天是工作日，代表盤中尚未更新，強制切換 Yahoo
                     if last_date < today_date and today_date.weekday() < 5:
                         need_yfinance = True
 
@@ -475,7 +475,6 @@ elif nav_mode in ["🎯 個股戰情室", "✏️ 手動輸入"] and selected_st
                             yf_df.columns = yf_df.columns.get_level_values(0)
                         yf_df.rename(columns=lambda x: x.capitalize(), inplace=True)
                         yf_df.index = pd.to_datetime(yf_df.index)
-                        # 用 Yahoo 的最新即時資料完美覆蓋
                         df_d_raw = yf_df  
 
                 if not df_d_raw.empty:
@@ -541,7 +540,6 @@ elif nav_mode in ["🎯 個股戰情室", "✏️ 手動輸入"] and selected_st
                     else:
                         st.write("條件尚未符合或資料不足")
 
-                    # ── 基本面資料（從CSV）──
                     if not df_list.empty and code in df_list['代號'].astype(str).values:
                         stock_row = df_list[df_list['代號'].astype(str) == code].iloc[0]
                         if '檢核結果' in stock_row and pd.notna(stock_row['檢核結果']):
@@ -566,9 +564,16 @@ elif nav_mode in ["🎯 個股戰情室", "✏️ 手動輸入"] and selected_st
                         rsi_val = float(last['RSI'])
                         adx_val = float(last['ADX'])
                         bbw_val = float(last['bbw'])
+                        
+                        # 🌟 擷取新加入的 MACD 與 OBV 資料
+                        dif_val = float(last['DIF'])
+                        obv_val = float(last['OBV'])
+                        obv_ma  = float(last['OBV_ma10'])
+                        
                         bias_20 = (curr_c - float(last['ma20'])) / float(last['ma20']) * 100
 
-                        stop_atr     = round(curr_c - atr_val * 1.0, 2)
+                        # 🌟 升級：調寬波段停損空間 (1.0倍 ATR 改為 1.5倍 ATR)
+                        stop_atr     = round(curr_c - atr_val * 1.5, 2)
                         stop_struct  = round(float(df_d['Low'].squeeze().iloc[-11:-1].min()), 2)
                         hard_stop    = max(stop_atr, stop_struct)
                         stop_pct     = round((curr_c - hard_stop) / curr_c * 100, 1)
@@ -593,26 +598,20 @@ elif nav_mode in ["🎯 個股戰情室", "✏️ 手動輸入"] and selected_st
                         def row_item(dot_html, text):
                             return f"<div style='display:flex; align-items:baseline; line-height:1.7; margin-bottom:2px;'><span style='flex-shrink:0; margin-right:6px;'>{dot_html}</span><span style='font-size:0.95rem;'>{text}</span></div>"
 
-                        # ── ADX + DI方向 + 斜率完整判斷 ──
+                        # ── 各項指標解讀 ──
                         adx_trend = "↗ 加速" if adx_slope > 1 else ("→ 穩定" if adx_slope > -1 else "↘ 衰退")
                         if adx_val <= 25:
-                            adx_dot  = dot("yellow")
-                            adx_desc = f"盤整，等方向　{adx_trend}"
+                            adx_dot, adx_desc = dot("yellow"), f"盤整，等方向　{adx_trend}"
                         elif is_bullish and adx_slope > -1:
-                            adx_dot  = dot("green")
-                            adx_desc = f"強勢多頭　{adx_trend}　(+DI {plus_di:.1f} > -DI {minus_di:.1f})"
+                            adx_dot, adx_desc = dot("green"), f"強勢多頭　{adx_trend}　(+DI {plus_di:.1f} > -DI {minus_di:.1f})"
                         elif is_bullish and adx_slope <= -1:
-                            adx_dot  = dot("yellow")
-                            adx_desc = f"多頭末段，留意　{adx_trend}　(+DI {plus_di:.1f} > -DI {minus_di:.1f})"
+                            adx_dot, adx_desc = dot("yellow"), f"多頭末段，留意　{adx_trend}　(+DI {plus_di:.1f} > -DI {minus_di:.1f})"
                         elif not is_bullish and adx_slope > -1:
-                            adx_dot  = dot("red")
-                            adx_desc = f"強勢空頭，避開　{adx_trend}　(-DI {minus_di:.1f} > +DI {plus_di:.1f})"
+                            adx_dot, adx_desc = dot("red"), f"強勢空頭，避開　{adx_trend}　(-DI {minus_di:.1f} > +DI {plus_di:.1f})"
                         else:
-                            adx_dot  = dot("yellow")
-                            adx_desc = f"空頭衰退，觀望　{adx_trend}　(-DI {minus_di:.1f} > +DI {plus_di:.1f})"
+                            adx_dot, adx_desc = dot("yellow"), f"空頭衰退，觀望　{adx_trend}　(-DI {minus_di:.1f} > +DI {plus_di:.1f})"
 
-                        rsi_dot  = dot("green") if rsi_val < 65 else (dot("yellow") if rsi_val < 75 else dot("red"))
-                        rsi_desc = "動能正常" if rsi_val < 65 else ("略高，留意" if rsi_val < 75 else "超買，勿追")
+                        rsi_dot, rsi_desc = (dot("green"), "動能正常") if rsi_val < 65 else ((dot("yellow"), "略高，留意") if rsi_val < 75 else (dot("red"), "超買，勿追"))
 
                         if not above_20ma:
                             struct_dot, struct_desc = dot("red"), "跌破20MA，結構破壞"
@@ -632,35 +631,46 @@ elif nav_mode in ["🎯 個股戰情室", "✏️ 手動輸入"] and selected_st
                         else:
                             bbw_dot, bbw_desc = dot("yellow"), "帶寬已開但動能衰退，行情末段，留意轉折"
 
+                        # 🌟 新增：MACD 零軸與 OBV 籌碼解讀
+                        macd_dot, macd_desc = (dot("green"), "零軸之上 (大方向偏多)") if dif_val > 0 else (dot("yellow"), "零軸之下 (反彈視之，須縮小部位)")
+                        obv_dot, obv_desc   = (dot("green"), "買盤集中，大戶吃籌碼") if obv_val > obv_ma else (dot("yellow"), "量能渙散，追價意願較低")
+
+                        # 顯示面版
                         st.markdown(
                             row_item(adx_dot,    f"<b>趨勢強度</b>：ADX {adx_val:.1f} → {adx_desc}") +
                             row_item(rsi_dot,    f"<b>動能位置</b>：RSI {rsi_val:.1f} → {rsi_desc}") +
                             row_item(struct_dot, f"<b>均線結構</b>：{struct_desc}") +
-                            row_item(bbw_dot,    f"<b>波動狀態</b>：BBW {bbw_val:.2f}% → {bbw_desc}"),
+                            row_item(bbw_dot,    f"<b>波動狀態</b>：BBW {bbw_val:.2f}% → {bbw_desc}") +
+                            row_item(macd_dot,   f"<b>MACD濾網</b>：DIF {dif_val:.2f} → {macd_desc}") +
+                            row_item(obv_dot,    f"<b>OBV 籌碼</b>：能量潮 → {obv_desc}"),
                             unsafe_allow_html=True
                         )
 
                         st.markdown("<div style='margin:8px 0; border-top:1px solid #eee;'></div>", unsafe_allow_html=True)
 
+                        # ── 🌟 升級版：進場建議邏輯 (融合 MACD 與 OBV 濾網) ──
                         if not above_20ma:
                             entry_html = row_item(dot("red"), "<b>進場建議</b>：跌破20MA，暫不操作")
                         elif not above_10ma:
                             entry_html = row_item(dot("yellow"), "<b>進場建議</b>：跌破10MA，等待止跌確認")
                         elif above_10ma and above_5ma and vol_ratio > 1.3:
-                            entry_html = row_item(dot("green"), f"<b>進場建議</b>：站上5MA且量增（量比{vol_ratio:.1f}x），強勢確認可追進")
-                        elif above_10ma and above_5ma:
-                            entry_html = row_item(dot("yellow"), f"<b>進場建議</b>：站上5MA但量未放大（量比{vol_ratio:.1f}x），等量增確認")
+                            if dif_val > 0 and obv_val > obv_ma:
+                                entry_html = row_item(dot("green"), f"<b>進場建議</b>：站上5MA＋量增＋籌碼配合，<b>勝率極高，可積極試單！</b>")
+                            else:
+                                entry_html = row_item(dot("yellow"), f"<b>進場建議</b>：出量站上5MA，但MACD或籌碼未跟上(易為假突破)，若進場請嚴格停損。")
                         elif above_10ma and abs(bias_10) < 2:
-                            entry_html = row_item(dot("green"), f"<b>進場建議</b>：回踩10MA支撐（乖離{bias_10:.1f}%），相對安全進場點")
+                            if dif_val > 0:
+                                entry_html = row_item(dot("green"), f"<b>進場建議</b>：回踩10MA支撐（乖離{bias_10:.1f}%），大方向安全，逢低布局點。")
+                            else:
+                                entry_html = row_item(dot("yellow"), f"<b>進場建議</b>：回踩10MA，但大方向偏弱，試單請縮小資金。")
                         else:
                             entry_html = row_item(dot("yellow"), "<b>進場建議</b>：整理中，等回踩10MA或量增突破5MA")
 
                         st.markdown(
                             entry_html +
-                            row_item("🛑", f"<b>停損參考</b>") +
-                            f"<div style='padding-left:1.6rem; font-size:0.95rem; margin-bottom:2px;'>ATR法（較近）：{stop_atr}　距現價 -{stop_pct}%</div>" +
-                            f"<div style='padding-left:1.6rem; font-size:0.95rem; margin-bottom:2px;'>10日結構低點：{stop_struct}</div>" +
-                            f"<div style='padding-left:1.6rem; font-size:0.85rem; color:#999; margin-bottom:4px;'>→ 建議以ATR法為主，結構低點為極限</div>",
+                            row_item("🛑", f"<b>波段停損參考 (1.5x ATR)</b>") +
+                            f"<div style='padding-left:1.6rem; font-size:0.95rem; margin-bottom:2px;'>防守價位：{stop_atr}　距現價 -{stop_pct}%</div>" +
+                            f"<div style='padding-left:1.6rem; font-size:0.85rem; color:#999; margin-bottom:4px;'>→ 給予合理震盪空間，防主力洗盤</div>",
                             unsafe_allow_html=True
                         )
 
@@ -682,16 +692,21 @@ elif nav_mode in ["🎯 個股戰情室", "✏️ 手動輸入"] and selected_st
                             st.markdown(row_item("✅", "<b>出場警示</b>：暫無，站上10MA可續抱"), unsafe_allow_html=True)
 
                         st.markdown("<div style='margin:8px 0; border-top:1px solid #eee;'></div>", unsafe_allow_html=True)
-
+                        
+                        # ── 🌟 升級版：結論總結 ──
                         if not above_20ma or (not is_bullish and adx_val > 40):
-                            conclusion = "跌破20MA，結構破壞，暫不建議操作。" if not above_20ma else f"強勢空頭（-DI {minus_di:.1f} > +DI {plus_di:.1f}），避免進場，等待方向反轉。"
+                            conclusion = "跌破20MA，結構破壞，暫不建議操作。" if not above_20ma else f"強勢空頭，避免進場，等待方向反轉。"
                             c_dot = dot("red")
                         elif not above_10ma:
                             conclusion = "跌破10MA開始警示，若無量縮止跌訊號，考慮先減碼觀察。"
                             c_dot = dot("yellow")
                         elif above_10ma and above_5ma and vol_ratio > 1.3:
-                            conclusion = f"站上5MA且量增（{vol_ratio:.1f}x），強勢確認，可追進，停損設在10MA附近。"
-                            c_dot = dot("green")
+                            if dif_val > 0 and obv_val > obv_ma:
+                                conclusion = f"各項指標共振偏多，籌碼與動能皆備，可積極進場，停損設 {stop_atr}。"
+                                c_dot = dot("green")
+                            else:
+                                conclusion = f"短線轉強，但大局觀（MACD/OBV）未完全配合，提防假突破，淺嘗輒止。"
+                                c_dot = dot("yellow")
                         elif above_10ma and abs(bias_10) < 2:
                             conclusion = f"回踩10MA支撐，整理健康，等放量突破5MA再進場，停損 {stop_atr}。"
                             c_dot = dot("green")
@@ -701,6 +716,7 @@ elif nav_mode in ["🎯 個股戰情室", "✏️ 手動輸入"] and selected_st
                         else:
                             conclusion = "結構健康但尚無明確進場訊號，等待站穩5MA且量增再行動。"
                             c_dot = dot("yellow")
-                        st.markdown(row_item(c_dot, f"<b>結論</b>：{conclusion}"), unsafe_allow_html=True)
+                            
+                        st.markdown(row_item(c_dot, f"<b>綜合結論</b>：{conclusion}"), unsafe_allow_html=True)
                     else:
                         st.write("資料不足，無法計算")
