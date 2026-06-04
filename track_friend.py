@@ -371,35 +371,39 @@ elif nav_mode in ["🎯 個股戰情室", "✏️ 手動輸入"] and selected_st
         # 🌟 2. UX 升級：加入讀取動畫，緩解等待的焦慮感
         with st.spinner(f"🚀 正在為您載入 {code} 的即時戰情，請稍候..."):
             
-            # ── 取得股票名稱（手動輸入時優先永豐API，備援TWSE，最後才用代號）──
+            stock_name = None
+            
+            # ── 取得股票名稱 ──
             if " " in selected_stock:
-                stock_display = selected_stock  # 選股清單：已有「代號 名稱」
+                # 情況A：選股清單已經有名字了，直接拿來用！（不用發網路請求，秒開🚀）
+                stock_display = selected_stock  
             else:
-                stock_name = None
-        # 先試 TWSE
-        try:
-            r = requests.get(f"https://www.twse.com.tw/zh/api/codeQuery?query={code}", timeout=5)
-            if r.status_code == 200:
-                data = r.json()
-                suggestions = data.get('suggestions', [])
-                if suggestions:
-                    parts = suggestions[0].split('\t')
-                    if len(parts) >= 2 and parts[0].strip() == code:
-                        stock_name = parts[1].strip()
-        except:
-            pass
-        # 備援：yfinance 取 shortName
-        if not stock_name:
-            try:
-                info = yf.Ticker(f"{code}.TW").fast_info
-                full_info = yf.Ticker(f"{code}.TW").info
-                name_raw = full_info.get('shortName', '') or full_info.get('longName', '')
-                if name_raw and any('\u4e00' <= c <= '\u9fff' for c in name_raw):
-                    stock_name = name_raw
-            except:
-                pass
-        stock_display = f"{code} {stock_name}" if stock_name else code
+                # 情況B：只有「手動輸入」才需要去網路查名字
+                try:
+                    r = requests.get(f"https://www.twse.com.tw/zh/api/codeQuery?query={code}", timeout=3)
+                    if r.status_code == 200:
+                        data = r.json()
+                        suggestions = data.get('suggestions', [])
+                        if suggestions:
+                            parts = suggestions[0].split('\t')
+                            if len(parts) >= 2 and parts[0].strip() == code:
+                                stock_name = parts[1].strip()
+                except:
+                    pass
+                
+                # 備援：yfinance 取 shortName
+                if not stock_name:
+                    try:
+                        full_info = yf.Ticker(f"{code}.TW").info
+                        name_raw = full_info.get('shortName', '') or full_info.get('longName', '')
+                        if name_raw and any('\u4e00' <= c <= '\u9fff' for c in name_raw):
+                            stock_name = name_raw
+                    except:
+                        pass
+                
+                stock_display = f"{code} {stock_name}" if stock_name else code
 
+    
     # 下載日K資料
     today_str = datetime.date.today().isoformat()
     if f"df_d_{code}" not in st.session_state or st.session_state.get(f"df_d_{code}_date") != today_str:
