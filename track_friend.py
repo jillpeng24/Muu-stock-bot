@@ -258,7 +258,7 @@ def render_kline_chart(df, chart_type='日K'):
 
 
 # ==========================================
-# 4. 主程式
+# 5. 主程式
 # ==========================================
 
 # ── 載入選股清單 ──
@@ -280,13 +280,19 @@ with st.sidebar:
     st.title("🌿 Stock-Track")
     st.divider()
 
-    # === 🌟 資料來源與選股邏輯整合 (極致緊湊版) ===
-    source_mode = st.radio("資料來源", ["📋 選股清單", "✏️ 手動輸入"], horizontal=True)
-    # (移除了多餘的空白行)
+    # === 🌟 全新 UI 架構：三大功能分流 ===
+    nav_mode = st.radio("功能模式", ["📋 報表總覽", "🎯 個股戰情室", "✏️ 手動輸入"], horizontal=True)
 
-    if source_mode == "📋 選股清單":
-        # 1. 抓取所有歷史檔案
-        history_files = sorted(glob.glob("data/final_selection_*.csv"), reverse=True)
+    df_list = pd.DataFrame()
+    selected_stock = None
+    selected_date_opt = None
+
+    if nav_mode in ["📋 報表總覽", "🎯 個股戰情室"]:
+        # 1. 抓取所有歷史檔案 (絕對路徑)
+        BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+        DATA_DIR = os.path.join(BASE_DIR, "data")
+        search_pattern = os.path.join(DATA_DIR, "final_selection_*.csv")
+        history_files = sorted(glob.glob(search_pattern), reverse=True)
         
         if history_files:
             date_options = []
@@ -299,38 +305,63 @@ with st.sidebar:
                         formatted_date = datetime.datetime.strptime(date_str, "%Y%m%d").strftime("%Y-%m-%d")
                     else:
                         formatted_date = date_str
-                    opt_name = f"戰報 {formatted_date}"
+                    opt_name = f"報表 {formatted_date}"
                 except:
-                    opt_name = f"戰報 {date_str}"
+                    opt_name = f"報表 {date_str}"
                     
                 if opt_name not in date_options:
                     date_options.append(opt_name)
                     file_mapping[opt_name] = f
             
-            # 2. 顯示戰報日期下拉選單
-            selected_date_opt = st.selectbox("選擇戰報日期：", date_options)
+            # 2. 顯示報表日期下拉選單
+            selected_date_opt = st.selectbox("選擇報表日期：", date_options)
             target_file = file_mapping[selected_date_opt]
             df_list = load_selection_csv(target_file)
             
-            # (移除了干擾視覺的分隔線 st.divider)
-            
-            # 3. 顯示該日期的股票清單 (緊接在日期下方)
-            if not df_list.empty:
-                selected_stock = st.selectbox("請選擇標的：", df_list['代號'].astype(str) + " " + df_list['名稱'])
-            else:
-                st.warning("該日清單為空，請改用手動輸入")
-                selected_stock = st.text_input("輸入台股代號：", value="2330")
+            # 3. 🌟 只有在「個股戰情室」模式，才顯示股票下拉選單！
+            if nav_mode == "🎯 個股戰情室":
+                if not df_list.empty:
+                    stock_options = list(df_list['代號'].astype(str) + " " + df_list['名稱'])
+                    selected_stock = st.selectbox("請選擇標的：", stock_options)
+                else:
+                    st.warning("該日清單為空，請選擇其他日期。")
         else:
             st.warning("尚無選股清單資料，請改用手動輸入")
-            selected_stock = st.text_input("輸入台股代號：", value="2330")
 
-    else:
+    elif nav_mode == "✏️ 手動輸入":
         # 手動輸入模式
-        df_list = pd.DataFrame()
         manual_input = st.text_input("輸入台股代號：", value="2330", placeholder="例如：2330、00631L")
         selected_stock = manual_input.strip()
 
-if selected_stock:
+
+# === 🌟 主畫面顯示邏輯：總覽模式 vs 個股模式 ===
+if nav_mode == "📋 報表總覽":
+    # 專屬的總覽網頁
+    if not df_list.empty:
+        st.markdown(f"### 🏆 {selected_date_opt} 總覽 (共 {len(df_list)} 檔)")
+        st.caption("💡 以下為該日所有符合條件之標的，若需查看 K 線與進出場建議，請從左側切換至「🎯 個股戰情室」。")
+        st.divider()
+        
+        # 模仿 LINE 的排版，產出精美卡片
+        for _, row in df_list.iterrows():
+            with st.container(border=True):
+                score = f"({row['技術面得分']})" if '技術面得分' in row and pd.notna(row['技術面得分']) else ""
+                st.markdown(f"#### 【{row['代號']} {row['名稱']}】 <span style='color:#E91E63; font-size:1.1rem;'>{score}</span>", unsafe_allow_html=True)
+                
+                content = f"""
+                <div style='line-height:1.7; font-size:1rem; color:#4A4036;'>
+                    <b>● 分類：</b> {row.get('分類', '-')}<br>
+                    <b>● 技術面：</b> {row.get('技術面檢核', '-')}<br>
+                    <b>● 基本面：</b> {row.get('檢核結果', '-')}<br>
+                    <b>● 警示：</b> {row.get('警示', '-')}
+                </div>
+                """
+                st.markdown(content, unsafe_allow_html=True)
+    else:
+        st.info("請從左側選擇報表日期，或目前尚無資料可供總覽。")
+
+# === 專屬的單一個股戰情室 ===
+elif nav_mode in ["🎯 個股戰情室", "✏️ 手動輸入"] and selected_stock:
     code = selected_stock.split(" ")[0].strip()
 
     # 🌟 1. 字數防呆：不到 4 碼不執行，避免 Streamlit 狂發網路請求導致卡頓
@@ -376,7 +407,7 @@ if selected_stock:
         def load_finmind(stock_id):
             try:
                 token = st.secrets["finmind"]["token"]
-                start = (datetime.date.today() - datetime.timedelta(days=365*5)).strftime("%Y-%m-%d")
+                start = (datetime.date.today() - datetime.timedelta(days=180)).strftime("%Y-%m-%d") # 更新為 180 天
                 url = "https://api.finmindtrade.com/api/v4/data"
                 params = {
                     "dataset": "TaiwanStockPrice",
@@ -404,7 +435,7 @@ if selected_stock:
 
         if df_d_raw.empty:
             end_date   = datetime.date.today() + datetime.timedelta(days=1)
-            start_date = datetime.date.today() - datetime.timedelta(days=365*5)
+            start_date = datetime.date.today() - datetime.timedelta(days=180) # 更新為 180 天
             df_d_raw = yf.download(f"{code}.TW", start=start_date, end=end_date, progress=False)
             if df_d_raw.empty:
                 df_d_raw = yf.download(f"{code}.TWO", start=start_date, end=end_date, progress=False)
@@ -446,7 +477,6 @@ if selected_stock:
         _chg    = _last_c - _prev_c
         _chg_pct = _chg / _prev_c * 100
         
-        # === 🌟 標題與高級感按鈕水平並排 (終極防斷字版) ===
         wantgoo_url = f"https://www.wantgoo.com/stock/{code}"
         st.markdown(f"""
             <div style='display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 15px;'>
@@ -454,9 +484,7 @@ if selected_stock:
                 <a href='{wantgoo_url}' target='_blank' class='link-btn' style='margin-bottom: 0;'>🔗 玩股網查詢</a>
             </div>
         """, unsafe_allow_html=True)
-        # ==================================================
         
-        # 只保留現價顯示，乾淨俐落
         st.metric(label="現價", value=f"{_last_c:.2f}", delta=f"{_chg:+.2f} ({_chg_pct:+.2f}%)")
              
         st.divider()
