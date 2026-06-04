@@ -11,6 +11,16 @@ import io
 import glob 
 
 # ==========================================
+# 0. 強制設定台灣時區 (解決雲端伺服器時差問題)
+# ==========================================
+os.environ['TZ'] = 'Asia/Taipei'
+try:
+    import time
+    time.tzset()
+except Exception:
+    pass
+
+# ==========================================
 # 1. 頁面基本設定
 # ==========================================
 st.set_page_config(page_title="Stock-Track", layout="wide", initial_sidebar_state="expanded")
@@ -27,21 +37,21 @@ st.markdown("""
         padding: 5px 14px;
         font-size: 13px;
         font-weight: 500;
-        color: #6B5E53 !important;      /* 溫潤的大地灰褐文字 */
-        background-color: #F9F6F0;    /* 柔和的米黃背景 */
-        border: 1px solid #EAE3D9;    /* 極淡的暖色邊框 */
-        border-radius: 8px;           /* 四方微圓邊 */
+        color: #6B5E53 !important;      
+        background-color: #F9F6F0;    
+        border: 1px solid #EAE3D9;    
+        border-radius: 8px;           
         text-decoration: none;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.02); /* 增加高級感的極淡陰影 */
+        box-shadow: 0 2px 4px rgba(0,0,0,0.02); 
         transition: all 0.2s ease;
-        white-space: nowrap;          /* 🌟 新增：確保手機版按鈕文字絕對不換行 */
+        white-space: nowrap;          
     }
     .link-btn:hover {
-        background-color: #F0EBE1;    /* 滑鼠懸停時微深的米色 */
+        background-color: #F0EBE1;    
         color: #4A4036 !important;
         border-color: #DCD3C6;
-        box-shadow: 0 4px 8px rgba(0,0,0,0.05); /* 懸停時陰影加深 */
-        transform: translateY(-1px);  /* 懸停時按鈕微幅上浮的質感動畫 */
+        box-shadow: 0 4px 8px rgba(0,0,0,0.05); 
+        transform: translateY(-1px);  
     }
     </style>
 """, unsafe_allow_html=True)
@@ -403,292 +413,294 @@ elif nav_mode in ["🎯 個股戰情室", "✏️ 手動輸入"] and selected_st
                 
                 stock_display = f"{code} {stock_name}" if stock_name else code
 
-    
-    # 下載日K資料
-    today_str = datetime.date.today().isoformat()
-    if f"df_d_{code}" not in st.session_state or st.session_state.get(f"df_d_{code}_date") != today_str:
+            # 下載日K資料
+            today_str = datetime.date.today().isoformat()
+            if f"df_d_{code}" not in st.session_state or st.session_state.get(f"df_d_{code}_date") != today_str:
 
-        def load_finmind(stock_id):
-            try:
-                token = st.secrets["finmind"]["token"]
-                start = (datetime.date.today() - datetime.timedelta(days=180)).strftime("%Y-%m-%d") # 更新為 180 天
-                url = "https://api.finmindtrade.com/api/v4/data"
-                params = {
-                    "dataset": "TaiwanStockPrice",
-                    "data_id": stock_id,
-                    "start_date": start,
-                    "token": token
-                }
-                r = requests.get(url, params=params, timeout=15)
-                if r.status_code == 200:
-                    data = r.json()
-                    if data.get("status") == 200 and data.get("data"):
-                        df = pd.DataFrame(data["data"])
-                        df["date"] = pd.to_datetime(df["date"])
-                        df = df.set_index("date").sort_index()
-                        df.rename(columns={
-                            "open": "Open", "max": "High", "min": "Low",
-                            "close": "Close", "Trading_Volume": "Volume"
-                        }, inplace=True)
-                        return df[["Open", "High", "Low", "Close", "Volume"]]
-            except Exception:
-                pass
-            return pd.DataFrame()
-df_d_raw = load_finmind(code)
+                def load_finmind(stock_id):
+                    try:
+                        if "finmind" in st.secrets and "token" in st.secrets["finmind"]:
+                            token = st.secrets["finmind"]["token"]
+                        else:
+                            token = "" # 如果沒有 token 就留空
+                        
+                        start = (datetime.date.today() - datetime.timedelta(days=180)).strftime("%Y-%m-%d")
+                        url = "https://api.finmindtrade.com/api/v4/data"
+                        params = {
+                            "dataset": "TaiwanStockPrice",
+                            "data_id": stock_id,
+                            "start_date": start,
+                            "token": token
+                        }
+                        r = requests.get(url, params=params, timeout=15)
+                        if r.status_code == 200:
+                            data = r.json()
+                            if data.get("status") == 200 and data.get("data"):
+                                df = pd.DataFrame(data["data"])
+                                df["date"] = pd.to_datetime(df["date"])
+                                df = df.set_index("date").sort_index()
+                                df.rename(columns={
+                                    "open": "Open", "max": "High", "min": "Low",
+                                    "close": "Close", "Trading_Volume": "Volume"
+                                }, inplace=True)
+                                return df[["Open", "High", "Low", "Close", "Volume"]]
+                    except Exception:
+                        pass
+                    return pd.DataFrame()
 
-            # === 🌟 修正：FinMind 盤中時間差與備援觸發機制 ===
-            need_yfinance = False
-            today_date = datetime.date.today()
-            
-            if df_d_raw.empty:
-                need_yfinance = True
-            else:
-                # 取得 FinMind 最後一筆資料的日期
-                last_date = df_d_raw.index[-1].date()
-                # 如果最後一筆資料不是今天，且今天是工作日 (週一=0 ~ 週五=4)
-                # 代表現在可能是盤中，FinMind 還沒更新今天的 K 棒！強制啟動 Yahoo 備援！
-                if last_date < today_date and today_date.weekday() < 5:
+                df_d_raw = load_finmind(code)
+
+                # === 🌟 修正：FinMind 盤中時間差與備援觸發機制 ===
+                need_yfinance = False
+                today_date = datetime.date.today()
+                
+                if df_d_raw.empty:
                     need_yfinance = True
+                else:
+                    # 取得 FinMind 最後一筆資料的日期
+                    last_date = df_d_raw.index[-1].date()
+                    # 如果最後一筆資料小於今天，且今天是工作日，代表盤中尚未更新，強制切換 Yahoo
+                    if last_date < today_date and today_date.weekday() < 5:
+                        need_yfinance = True
 
-            if need_yfinance:
-                end_date   = datetime.date.today() + datetime.timedelta(days=1)
-                start_date = datetime.date.today() - datetime.timedelta(days=180)
-                yf_df = yf.download(f"{code}.TW", start=start_date, end=end_date, progress=False)
-                if yf_df.empty:
-                    yf_df = yf.download(f"{code}.TWO", start=start_date, end=end_date, progress=False)
-                
-                if not yf_df.empty:
-                    if isinstance(yf_df.columns, pd.MultiIndex):
-                        yf_df.columns = yf_df.columns.get_level_values(0)
-                    yf_df.rename(columns=lambda x: x.capitalize(), inplace=True)
-                    yf_df.index = pd.to_datetime(yf_df.index)
-                    # 用 Yahoo 的最新即時資料完美覆蓋
-                    df_d_raw = yf_df  
-            # === 修正結束 ===
+                if need_yfinance:
+                    end_date   = today_date + datetime.timedelta(days=1)
+                    start_date = today_date - datetime.timedelta(days=180)
+                    yf_df = yf.download(f"{code}.TW", start=start_date, end=end_date, progress=False)
+                    if yf_df.empty:
+                        yf_df = yf.download(f"{code}.TWO", start=start_date, end=end_date, progress=False)
+                    
+                    if not yf_df.empty:
+                        if isinstance(yf_df.columns, pd.MultiIndex):
+                            yf_df.columns = yf_df.columns.get_level_values(0)
+                        yf_df.rename(columns=lambda x: x.capitalize(), inplace=True)
+                        yf_df.index = pd.to_datetime(yf_df.index)
+                        # 用 Yahoo 的最新即時資料完美覆蓋
+                        df_d_raw = yf_df  
 
-        if not df_d_raw.empty:
-            required = ['Open', 'High', 'Low', 'Close', 'Volume']
-            for col in required:
-                if col not in df_d_raw.columns:
-                    df_d_raw = pd.DataFrame()
-                    break
+                if not df_d_raw.empty:
+                    required = ['Open', 'High', 'Low', 'Close', 'Volume']
+                    for col in required:
+                        if col not in df_d_raw.columns:
+                            df_d_raw = pd.DataFrame()
+                            break
+                    if not df_d_raw.empty:
+                        df_d_raw = df_d_raw[required].copy()
+                        df_d_raw.dropna(inplace=True)
+                        df_d_raw['ts'] = df_d_raw.index
+                        st.session_state[f"df_d_{code}"] = df_d_raw
+                        st.session_state[f"df_d_{code}_date"] = today_str
+                    else:
+                        st.session_state[f"df_d_{code}"] = pd.DataFrame()
+                else:
+                    st.session_state[f"df_d_{code}"] = pd.DataFrame()
+
+            df_d_raw = st.session_state[f"df_d_{code}"]
+
             if not df_d_raw.empty:
-                df_d_raw = df_d_raw[required].copy()
-                df_d_raw.dropna(inplace=True)
-                df_d_raw['ts'] = df_d_raw.index
-                st.session_state[f"df_d_{code}"] = df_d_raw
-                st.session_state[f"df_d_{code}_date"] = today_str
+                df_d, day_score, day_checks = calculate_all_indicators(df_d_raw)
             else:
-                st.session_state[f"df_d_{code}"] = pd.DataFrame()
-        else:
-            st.session_state[f"df_d_{code}"] = pd.DataFrame()
+                df_d = pd.DataFrame()
+                day_score, day_checks = 0, []
 
-    df_d_raw = st.session_state[f"df_d_{code}"]
-
-    if not df_d_raw.empty:
-        df_d, day_score, day_checks = calculate_all_indicators(df_d_raw)
-    else:
-        df_d = pd.DataFrame()
-        day_score, day_checks = 0, []
-
-    # 現價與外部連結
-    if not df_d.empty:
-        _last_c = float(df_d['Close'].squeeze().iloc[-1])
-        _prev_c = float(df_d['Close'].squeeze().iloc[-2])
-        _chg    = _last_c - _prev_c
-        _chg_pct = _chg / _prev_c * 100
-        
-        wantgoo_url = f"https://www.wantgoo.com/stock/{code}"
-        st.markdown(f"""
-            <div style='display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 15px;'>
-                <h3 style='margin: 0; padding: 0; white-space: nowrap;'>📊 {stock_display} 戰情室</h3>
-                <a href='{wantgoo_url}' target='_blank' class='link-btn' style='margin-bottom: 0;'>🔗 玩股網查詢</a>
-            </div>
-        """, unsafe_allow_html=True)
-        
-        st.metric(label="現價", value=f"{_last_c:.2f}", delta=f"{_chg:+.2f} ({_chg_pct:+.2f}%)")
-             
-        st.divider()
-
-        # ── 日K / 週K / 月K 切換 ──
-        chart_type = st.radio("K線週期", ["日K", "週K", "月K"], horizontal=True, index=0)
-        render_kline_chart(df_d, chart_type=chart_type)
-    else:
-        st.warning(f"無法取得 {code} 的資料，請確認代號是否正確。")
-
-    # 卡片區
-    st.divider()
-    col1, col2 = st.columns([1, 1.6])
-
-    with col1:
-        with st.container(border=True):
-            st.subheader(f"📝 技術檢核 ({day_score}/7)")
-            if day_checks:
-                for item in day_checks:
-                    st.write(item)
-            else:
-                st.write("條件尚未符合或資料不足")
-
-            # ── 基本面資料（從CSV）──
-            if not df_list.empty and code in df_list['代號'].astype(str).values:
-                stock_row = df_list[df_list['代號'].astype(str) == code].iloc[0]
-                if '檢核結果' in stock_row and pd.notna(stock_row['檢核結果']):
-                    st.divider()
-                    st.subheader("📋 基本面檢核")
-                    for item in str(stock_row['檢核結果']).split(' | '):
-                        st.write(item.strip())
-                
-                if '警示' in stock_row and pd.notna(stock_row['警示']) and stock_row['警示'] != '-':
-                    st.divider()
-                    st.subheader("⚠️ 警示")
-                    for w in str(stock_row['警示']).split(' | '):
-                        st.write(w.strip())
-
-    with col2:
-        with st.container(border=True):
-            st.subheader("🎯 進出場參考")
+            # 現價與外部連結
             if not df_d.empty:
-                last    = df_d.iloc[-1]
-                curr_c  = float(last['Close'])
-                atr_val = float(last['ATR'])
-                rsi_val = float(last['RSI'])
-                adx_val = float(last['ADX'])
-                bbw_val = float(last['bbw'])
-                bias_20 = (curr_c - float(last['ma20'])) / float(last['ma20']) * 100
+                _last_c = float(df_d['Close'].squeeze().iloc[-1])
+                _prev_c = float(df_d['Close'].squeeze().iloc[-2])
+                _chg    = _last_c - _prev_c
+                _chg_pct = _chg / _prev_c * 100
+                
+                wantgoo_url = f"https://www.wantgoo.com/stock/{code}"
+                st.markdown(f"""
+                    <div style='display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 15px;'>
+                        <h3 style='margin: 0; padding: 0; white-space: nowrap;'>📊 {stock_display} 戰情室</h3>
+                        <a href='{wantgoo_url}' target='_blank' class='link-btn' style='margin-bottom: 0;'>🔗 玩股網查詢</a>
+                    </div>
+                """, unsafe_allow_html=True)
+                
+                st.metric(label="現價", value=f"{_last_c:.2f}", delta=f"{_chg:+.2f} ({_chg_pct:+.2f}%)")
+                     
+                st.divider()
 
-                stop_atr     = round(curr_c - atr_val * 1.0, 2)
-                stop_struct  = round(float(df_d['Low'].squeeze().iloc[-11:-1].min()), 2)
-                hard_stop    = max(stop_atr, stop_struct)
-                stop_pct     = round((curr_c - hard_stop) / curr_c * 100, 1)
-
-                ma10_val   = float(last['ma10'])
-                bias_10    = (curr_c - ma10_val) / ma10_val * 100
-                adx_prev   = float(df_d['ADX'].squeeze().iloc[-2])
-                adx_slope  = adx_val - adx_prev
-                plus_di    = float(last['plus_di'])
-                minus_di   = float(last['minus_di'])
-                is_bullish = plus_di > minus_di
-                above_20ma = curr_c > float(last['ma20'])
-                above_10ma = curr_c > ma10_val
-                above_5ma  = curr_c > float(last['ma5'])
-                vol_ratio  = float(df_d['Volume'].squeeze().iloc[-1]) / float(df_d['Volume'].squeeze().iloc[-6:-1].mean())
-
-                def dot(level):
-                    colors = {"green": "#7BAE7F", "yellow": "#C9A84C", "red": "#B56576"}
-                    c = colors.get(level, "#999")
-                    return f"<span style='color:{c}; font-size:1.1rem;'>●</span>"
-
-                def row_item(dot_html, text):
-                    return f"<div style='display:flex; align-items:baseline; line-height:1.7; margin-bottom:2px;'><span style='flex-shrink:0; margin-right:6px;'>{dot_html}</span><span style='font-size:0.95rem;'>{text}</span></div>"
-
-                # ── ADX + DI方向 + 斜率完整判斷 ──
-                adx_trend = "↗ 加速" if adx_slope > 1 else ("→ 穩定" if adx_slope > -1 else "↘ 衰退")
-                if adx_val <= 25:
-                    adx_dot  = dot("yellow")
-                    adx_desc = f"盤整，等方向　{adx_trend}"
-                elif is_bullish and adx_slope > -1:
-                    adx_dot  = dot("green")
-                    adx_desc = f"強勢多頭　{adx_trend}　(+DI {plus_di:.1f} > -DI {minus_di:.1f})"
-                elif is_bullish and adx_slope <= -1:
-                    adx_dot  = dot("yellow")
-                    adx_desc = f"多頭末段，留意　{adx_trend}　(+DI {plus_di:.1f} > -DI {minus_di:.1f})"
-                elif not is_bullish and adx_slope > -1:
-                    adx_dot  = dot("red")
-                    adx_desc = f"強勢空頭，避開　{adx_trend}　(-DI {minus_di:.1f} > +DI {plus_di:.1f})"
-                else:
-                    adx_dot  = dot("yellow")
-                    adx_desc = f"空頭衰退，觀望　{adx_trend}　(-DI {minus_di:.1f} > +DI {plus_di:.1f})"
-
-                rsi_dot  = dot("green") if rsi_val < 65 else (dot("yellow") if rsi_val < 75 else dot("red"))
-                rsi_desc = "動能正常" if rsi_val < 65 else ("略高，留意" if rsi_val < 75 else "超買，勿追")
-
-                if not above_20ma:
-                    struct_dot, struct_desc = dot("red"), "跌破20MA，結構破壞"
-                elif not above_10ma:
-                    struct_dot, struct_desc = dot("yellow"), "跌破10MA，開始警示"
-                elif above_10ma and above_5ma:
-                    struct_dot, struct_desc = dot("green"), "站上10MA與5MA，整理健康"
-                else:
-                    struct_dot, struct_desc = dot("yellow"), "站上10MA，5MA待確認"
-
-                if bbw_val < 10:
-                    bbw_dot, bbw_desc = dot("yellow"), "帶寬收窄，蓄勢中"
-                elif adx_slope > 1:
-                    bbw_dot, bbw_desc = dot("green"), "帶寬已開＋動能加速，行情正在走"
-                elif adx_slope > -1:
-                    bbw_dot, bbw_desc = dot("green"), "帶寬已開＋動能穩定，持續觀察"
-                else:
-                    bbw_dot, bbw_desc = dot("yellow"), "帶寬已開但動能衰退，行情末段，留意轉折"
-
-                st.markdown(
-                    row_item(adx_dot,    f"<b>趨勢強度</b>：ADX {adx_val:.1f} → {adx_desc}") +
-                    row_item(rsi_dot,    f"<b>動能位置</b>：RSI {rsi_val:.1f} → {rsi_desc}") +
-                    row_item(struct_dot, f"<b>均線結構</b>：{struct_desc}") +
-                    row_item(bbw_dot,    f"<b>波動狀態</b>：BBW {bbw_val:.2f}% → {bbw_desc}"),
-                    unsafe_allow_html=True
-                )
-
-                st.markdown("<div style='margin:8px 0; border-top:1px solid #eee;'></div>", unsafe_allow_html=True)
-
-                if not above_20ma:
-                    entry_html = row_item(dot("red"), "<b>進場建議</b>：跌破20MA，暫不操作")
-                elif not above_10ma:
-                    entry_html = row_item(dot("yellow"), "<b>進場建議</b>：跌破10MA，等待止跌確認")
-                elif above_10ma and above_5ma and vol_ratio > 1.3:
-                    entry_html = row_item(dot("green"), f"<b>進場建議</b>：站上5MA且量增（量比{vol_ratio:.1f}x），強勢確認可追進")
-                elif above_10ma and above_5ma:
-                    entry_html = row_item(dot("yellow"), f"<b>進場建議</b>：站上5MA但量未放大（量比{vol_ratio:.1f}x），等量增確認")
-                elif above_10ma and abs(bias_10) < 2:
-                    entry_html = row_item(dot("green"), f"<b>進場建議</b>：回踩10MA支撐（乖離{bias_10:.1f}%），相對安全進場點")
-                else:
-                    entry_html = row_item(dot("yellow"), "<b>進場建議</b>：整理中，等回踩10MA或量增突破5MA")
-
-                st.markdown(
-                    entry_html +
-                    row_item("🛑", f"<b>停損參考</b>") +
-                    f"<div style='padding-left:1.6rem; font-size:0.95rem; margin-bottom:2px;'>ATR法（較近）：{stop_atr}　距現價 -{stop_pct}%</div>" +
-                    f"<div style='padding-left:1.6rem; font-size:0.95rem; margin-bottom:2px;'>10日結構低點：{stop_struct}</div>" +
-                    f"<div style='padding-left:1.6rem; font-size:0.85rem; color:#999; margin-bottom:4px;'>→ 建議以ATR法為主，結構低點為極限</div>",
-                    unsafe_allow_html=True
-                )
-
-                st.markdown("<div style='margin:8px 0; border-top:1px solid #eee;'></div>", unsafe_allow_html=True)
-
-                new_exit_signals = []
-                if df_d['K'].squeeze().iloc[-1] > 80 and df_d['K'].squeeze().iloc[-1] < df_d['K'].squeeze().iloc[-2]:
-                    new_exit_signals.append("⚠️ KD高檔死叉，留意出場")
-                if not above_10ma:
-                    new_exit_signals.append("⚠️ 跌破10MA，動能轉弱，考慮減碼")
-                if df_d['Volume'].squeeze().iloc[-1] < df_d['Volume'].squeeze().iloc[-2] and curr_c >= df_d['High'].squeeze().iloc[-6:-1].max():
-                    new_exit_signals.append("⚠️ 量縮創高，主力出貨訊號")
-
-                if new_exit_signals:
-                    for sig in new_exit_signals:
-                        icon, text = sig[:2], sig[2:]
-                        st.markdown(row_item(icon, text), unsafe_allow_html=True)
-                else:
-                    st.markdown(row_item("✅", "<b>出場警示</b>：暫無，站上10MA可續抱"), unsafe_allow_html=True)
-
-                st.markdown("<div style='margin:8px 0; border-top:1px solid #eee;'></div>", unsafe_allow_html=True)
-
-                if not above_20ma or (not is_bullish and adx_val > 40):
-                    conclusion = "跌破20MA，結構破壞，暫不建議操作。" if not above_20ma else f"強勢空頭（-DI {minus_di:.1f} > +DI {plus_di:.1f}），避免進場，等待方向反轉。"
-                    c_dot = dot("red")
-                elif not above_10ma:
-                    conclusion = "跌破10MA開始警示，若無量縮止跌訊號，考慮先減碼觀察。"
-                    c_dot = dot("yellow")
-                elif above_10ma and above_5ma and vol_ratio > 1.3:
-                    conclusion = f"站上5MA且量增（{vol_ratio:.1f}x），強勢確認，可追進，停損設在10MA附近。"
-                    c_dot = dot("green")
-                elif above_10ma and abs(bias_10) < 2:
-                    conclusion = f"回踩10MA支撐，整理健康，等放量突破5MA再進場，停損 {stop_atr}。"
-                    c_dot = dot("green")
-                elif adx_slope < -1:
-                    conclusion = "ADX斜率下降，動能衰退中，觀察是否轉為區間震盪，暫時觀望。"
-                    c_dot = dot("yellow")
-                else:
-                    conclusion = "結構健康但尚無明確進場訊號，等待站穩5MA且量增再行動。"
-                    c_dot = dot("yellow")
-                st.markdown(row_item(c_dot, f"<b>結論</b>：{conclusion}"), unsafe_allow_html=True)
+                # ── 日K / 週K / 月K 切換 ──
+                chart_type = st.radio("K線週期", ["日K", "週K", "月K"], horizontal=True, index=0)
+                render_kline_chart(df_d, chart_type=chart_type)
             else:
-                st.write("資料不足，無法計算")
+                st.warning(f"無法取得 {code} 的資料，請確認代號是否正確。")
+
+            # 卡片區
+            st.divider()
+            col1, col2 = st.columns([1, 1.6])
+
+            with col1:
+                with st.container(border=True):
+                    st.subheader(f"📝 技術檢核 ({day_score}/7)")
+                    if day_checks:
+                        for item in day_checks:
+                            st.write(item)
+                    else:
+                        st.write("條件尚未符合或資料不足")
+
+                    # ── 基本面資料（從CSV）──
+                    if not df_list.empty and code in df_list['代號'].astype(str).values:
+                        stock_row = df_list[df_list['代號'].astype(str) == code].iloc[0]
+                        if '檢核結果' in stock_row and pd.notna(stock_row['檢核結果']):
+                            st.divider()
+                            st.subheader("📋 基本面檢核")
+                            for item in str(stock_row['檢核結果']).split(' | '):
+                                st.write(item.strip())
+                        
+                        if '警示' in stock_row and pd.notna(stock_row['警示']) and stock_row['警示'] != '-':
+                            st.divider()
+                            st.subheader("⚠️ 警示")
+                            for w in str(stock_row['警示']).split(' | '):
+                                st.write(w.strip())
+
+            with col2:
+                with st.container(border=True):
+                    st.subheader("🎯 進出場參考")
+                    if not df_d.empty:
+                        last    = df_d.iloc[-1]
+                        curr_c  = float(last['Close'])
+                        atr_val = float(last['ATR'])
+                        rsi_val = float(last['RSI'])
+                        adx_val = float(last['ADX'])
+                        bbw_val = float(last['bbw'])
+                        bias_20 = (curr_c - float(last['ma20'])) / float(last['ma20']) * 100
+
+                        stop_atr     = round(curr_c - atr_val * 1.0, 2)
+                        stop_struct  = round(float(df_d['Low'].squeeze().iloc[-11:-1].min()), 2)
+                        hard_stop    = max(stop_atr, stop_struct)
+                        stop_pct     = round((curr_c - hard_stop) / curr_c * 100, 1)
+
+                        ma10_val   = float(last['ma10'])
+                        bias_10    = (curr_c - ma10_val) / ma10_val * 100
+                        adx_prev   = float(df_d['ADX'].squeeze().iloc[-2])
+                        adx_slope  = adx_val - adx_prev
+                        plus_di    = float(last['plus_di'])
+                        minus_di   = float(last['minus_di'])
+                        is_bullish = plus_di > minus_di
+                        above_20ma = curr_c > float(last['ma20'])
+                        above_10ma = curr_c > ma10_val
+                        above_5ma  = curr_c > float(last['ma5'])
+                        vol_ratio  = float(df_d['Volume'].squeeze().iloc[-1]) / float(df_d['Volume'].squeeze().iloc[-6:-1].mean())
+
+                        def dot(level):
+                            colors = {"green": "#7BAE7F", "yellow": "#C9A84C", "red": "#B56576"}
+                            c = colors.get(level, "#999")
+                            return f"<span style='color:{c}; font-size:1.1rem;'>●</span>"
+
+                        def row_item(dot_html, text):
+                            return f"<div style='display:flex; align-items:baseline; line-height:1.7; margin-bottom:2px;'><span style='flex-shrink:0; margin-right:6px;'>{dot_html}</span><span style='font-size:0.95rem;'>{text}</span></div>"
+
+                        # ── ADX + DI方向 + 斜率完整判斷 ──
+                        adx_trend = "↗ 加速" if adx_slope > 1 else ("→ 穩定" if adx_slope > -1 else "↘ 衰退")
+                        if adx_val <= 25:
+                            adx_dot  = dot("yellow")
+                            adx_desc = f"盤整，等方向　{adx_trend}"
+                        elif is_bullish and adx_slope > -1:
+                            adx_dot  = dot("green")
+                            adx_desc = f"強勢多頭　{adx_trend}　(+DI {plus_di:.1f} > -DI {minus_di:.1f})"
+                        elif is_bullish and adx_slope <= -1:
+                            adx_dot  = dot("yellow")
+                            adx_desc = f"多頭末段，留意　{adx_trend}　(+DI {plus_di:.1f} > -DI {minus_di:.1f})"
+                        elif not is_bullish and adx_slope > -1:
+                            adx_dot  = dot("red")
+                            adx_desc = f"強勢空頭，避開　{adx_trend}　(-DI {minus_di:.1f} > +DI {plus_di:.1f})"
+                        else:
+                            adx_dot  = dot("yellow")
+                            adx_desc = f"空頭衰退，觀望　{adx_trend}　(-DI {minus_di:.1f} > +DI {plus_di:.1f})"
+
+                        rsi_dot  = dot("green") if rsi_val < 65 else (dot("yellow") if rsi_val < 75 else dot("red"))
+                        rsi_desc = "動能正常" if rsi_val < 65 else ("略高，留意" if rsi_val < 75 else "超買，勿追")
+
+                        if not above_20ma:
+                            struct_dot, struct_desc = dot("red"), "跌破20MA，結構破壞"
+                        elif not above_10ma:
+                            struct_dot, struct_desc = dot("yellow"), "跌破10MA，開始警示"
+                        elif above_10ma and above_5ma:
+                            struct_dot, struct_desc = dot("green"), "站上10MA與5MA，整理健康"
+                        else:
+                            struct_dot, struct_desc = dot("yellow"), "站上10MA，5MA待確認"
+
+                        if bbw_val < 10:
+                            bbw_dot, bbw_desc = dot("yellow"), "帶寬收窄，蓄勢中"
+                        elif adx_slope > 1:
+                            bbw_dot, bbw_desc = dot("green"), "帶寬已開＋動能加速，行情正在走"
+                        elif adx_slope > -1:
+                            bbw_dot, bbw_desc = dot("green"), "帶寬已開＋動能穩定，持續觀察"
+                        else:
+                            bbw_dot, bbw_desc = dot("yellow"), "帶寬已開但動能衰退，行情末段，留意轉折"
+
+                        st.markdown(
+                            row_item(adx_dot,    f"<b>趨勢強度</b>：ADX {adx_val:.1f} → {adx_desc}") +
+                            row_item(rsi_dot,    f"<b>動能位置</b>：RSI {rsi_val:.1f} → {rsi_desc}") +
+                            row_item(struct_dot, f"<b>均線結構</b>：{struct_desc}") +
+                            row_item(bbw_dot,    f"<b>波動狀態</b>：BBW {bbw_val:.2f}% → {bbw_desc}"),
+                            unsafe_allow_html=True
+                        )
+
+                        st.markdown("<div style='margin:8px 0; border-top:1px solid #eee;'></div>", unsafe_allow_html=True)
+
+                        if not above_20ma:
+                            entry_html = row_item(dot("red"), "<b>進場建議</b>：跌破20MA，暫不操作")
+                        elif not above_10ma:
+                            entry_html = row_item(dot("yellow"), "<b>進場建議</b>：跌破10MA，等待止跌確認")
+                        elif above_10ma and above_5ma and vol_ratio > 1.3:
+                            entry_html = row_item(dot("green"), f"<b>進場建議</b>：站上5MA且量增（量比{vol_ratio:.1f}x），強勢確認可追進")
+                        elif above_10ma and above_5ma:
+                            entry_html = row_item(dot("yellow"), f"<b>進場建議</b>：站上5MA但量未放大（量比{vol_ratio:.1f}x），等量增確認")
+                        elif above_10ma and abs(bias_10) < 2:
+                            entry_html = row_item(dot("green"), f"<b>進場建議</b>：回踩10MA支撐（乖離{bias_10:.1f}%），相對安全進場點")
+                        else:
+                            entry_html = row_item(dot("yellow"), "<b>進場建議</b>：整理中，等回踩10MA或量增突破5MA")
+
+                        st.markdown(
+                            entry_html +
+                            row_item("🛑", f"<b>停損參考</b>") +
+                            f"<div style='padding-left:1.6rem; font-size:0.95rem; margin-bottom:2px;'>ATR法（較近）：{stop_atr}　距現價 -{stop_pct}%</div>" +
+                            f"<div style='padding-left:1.6rem; font-size:0.95rem; margin-bottom:2px;'>10日結構低點：{stop_struct}</div>" +
+                            f"<div style='padding-left:1.6rem; font-size:0.85rem; color:#999; margin-bottom:4px;'>→ 建議以ATR法為主，結構低點為極限</div>",
+                            unsafe_allow_html=True
+                        )
+
+                        st.markdown("<div style='margin:8px 0; border-top:1px solid #eee;'></div>", unsafe_allow_html=True)
+
+                        new_exit_signals = []
+                        if df_d['K'].squeeze().iloc[-1] > 80 and df_d['K'].squeeze().iloc[-1] < df_d['K'].squeeze().iloc[-2]:
+                            new_exit_signals.append("⚠️ KD高檔死叉，留意出場")
+                        if not above_10ma:
+                            new_exit_signals.append("⚠️ 跌破10MA，動能轉弱，考慮減碼")
+                        if df_d['Volume'].squeeze().iloc[-1] < df_d['Volume'].squeeze().iloc[-2] and curr_c >= df_d['High'].squeeze().iloc[-6:-1].max():
+                            new_exit_signals.append("⚠️ 量縮創高，主力出貨訊號")
+
+                        if new_exit_signals:
+                            for sig in new_exit_signals:
+                                icon, text = sig[:2], sig[2:]
+                                st.markdown(row_item(icon, text), unsafe_allow_html=True)
+                        else:
+                            st.markdown(row_item("✅", "<b>出場警示</b>：暫無，站上10MA可續抱"), unsafe_allow_html=True)
+
+                        st.markdown("<div style='margin:8px 0; border-top:1px solid #eee;'></div>", unsafe_allow_html=True)
+
+                        if not above_20ma or (not is_bullish and adx_val > 40):
+                            conclusion = "跌破20MA，結構破壞，暫不建議操作。" if not above_20ma else f"強勢空頭（-DI {minus_di:.1f} > +DI {plus_di:.1f}），避免進場，等待方向反轉。"
+                            c_dot = dot("red")
+                        elif not above_10ma:
+                            conclusion = "跌破10MA開始警示，若無量縮止跌訊號，考慮先減碼觀察。"
+                            c_dot = dot("yellow")
+                        elif above_10ma and above_5ma and vol_ratio > 1.3:
+                            conclusion = f"站上5MA且量增（{vol_ratio:.1f}x），強勢確認，可追進，停損設在10MA附近。"
+                            c_dot = dot("green")
+                        elif above_10ma and abs(bias_10) < 2:
+                            conclusion = f"回踩10MA支撐，整理健康，等放量突破5MA再進場，停損 {stop_atr}。"
+                            c_dot = dot("green")
+                        elif adx_slope < -1:
+                            conclusion = "ADX斜率下降，動能衰退中，觀察是否轉為區間震盪，暫時觀望。"
+                            c_dot = dot("yellow")
+                        else:
+                            conclusion = "結構健康但尚無明確進場訊號，等待站穩5MA且量增再行動。"
+                            c_dot = dot("yellow")
+                        st.markdown(row_item(c_dot, f"<b>結論</b>：{conclusion}"), unsafe_allow_html=True)
+                    else:
+                        st.write("資料不足，無法計算")
