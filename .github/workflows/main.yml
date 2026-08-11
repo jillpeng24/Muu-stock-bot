@@ -2,7 +2,7 @@ name: Stock Auto Runner
 
 on:
   schedule:
-    # 台北時間 14:33（收盤後），UTC 05:33，僅週一至週五
+    # 台北時間 14:33（收盤後），UTC 06:33，僅週一至週五
     - cron: '33 6 * * 1-5'
   workflow_dispatch: # 允許手動點擊執行
 
